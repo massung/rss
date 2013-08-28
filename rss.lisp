@@ -104,7 +104,7 @@
                  (guid (query-xml item "guid" :first t)))
              (make-instance 'rss-item
                             :title (when title (node-value title))
-                            :link (when link (node-value link))
+                            :link (when link (parse-url (node-value link)))
                             :description (when description (node-value description))
                             :pub-date (when pub-date (node-value pub-date))
                             :guid (when guid (node-value guid))
