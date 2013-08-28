@@ -87,7 +87,7 @@
                       (ttl (query-xml channel "ttl" :first t)))
                   (make-instance 'rss-feed
                                  :title (when title (node-value title))
-                                 :link (when link (node-value link))
+                                 :link (when link (parse-url (node-value link)))
                                  :description (when description (node-value description))
                                  :image (when image (node-value image))
                                  :ttl (when ttl (parse-integer (node-value ttl)))
