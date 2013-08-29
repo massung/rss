@@ -18,7 +18,7 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :lw :re :xml :http)
+  (:use :cl :lw :re :xml :date :http)
   (:export
    #:read-rss
 
@@ -70,32 +70,6 @@
   (print-unreadable-object (item s :type t)
     (format s "~s" (item-title item))))
 
-(defconstant +date-re+ (compile-re "(%a+),%s*(%d+)%s+(%a+)%s+(%d+)%s+(%d+):(%d+):(%d+)%s+(.*)")
-  "An RSS date/time format (RFC 822).")
-(defconstant +months+ '("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")
-  "All months abbreviated for RFC 822 date format.")
-(defconstant +days+ '("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun")
-  "Days abbreviated for RFC 822 date format.")
-
-(defun month-of-name (month)
-  "Return the integer month for a given named month."
-  (1+ (position month +months+ :test #'string=)))
-
-(defun day-of-name (day)
-  "Return the integer day of the week for a given named day."
-  (position day +days+ :test #'string=))
-
-(defun parse-date (date-string)
-  "Encode a string representing a date into a universal timestamp."
-  (with-re-match (match (match-re +date-re+ date-string) :no-match (get-universal-time))
-    (let ((day (parse-integer $2))
-          (month (month-of-name $3))
-          (year (parse-integer $4))
-          (hour (parse-integer $5))
-          (min (parse-integer $6))
-          (sec (parse-integer $7)))
-    (encode-universal-time sec min hour day month year))))
-
 (defun read-rss (url)
   "Fetch a feed from a URL and parse it."
   (let ((resp (http-follow (http-get url))))
@@ -132,7 +106,7 @@
                             :title (when title (node-value title))
                             :link (when link (parse-url (node-value link)))
                             :description (when description (node-value description))
-                            :pub-date (when pub-date (parse-date (node-value pub-date)))
+                            :pub-date (when pub-date (encode-universal-rfc822-time (node-value pub-date)))
                             :guid (when guid (node-value guid))
                             :categories (parse-categories item)))))
     (mapcar #'parse-item (query-xml doc "/rss/channel/item"))))
