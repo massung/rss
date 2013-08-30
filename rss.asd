@@ -11,4 +11,4 @@
   :description "RSS feed parser for LispWorks."
   :serial t
   :components ((:file "rss"))
-  :depends-on ("http" "xml"))
+  :depends-on ("http" "xml" "date"))
