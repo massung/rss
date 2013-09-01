@@ -1,50 +1,39 @@
 # RSS Parser for LispWorks
 
-A simple RSS package for [LispWorks](http://www.lispworks.com) that uses the [XML](http://github.com/massung/xml) and [HTTP](http://github.com/massung/http) packages to parse RSS feeds.
+A simple RSS package for [LispWorks](http://www.lispworks.com) that uses the [XML](http://github.com/massung/xml), [HTTP](http://github.com/massung/http), and [date](http://github.com/massung/date) packages to parse RSS feeds.
 
 ## Quickstart
 
-Once all the dependency packages and the `rss` package have been loaded, simply call the `read-rss` function with a URL to download and parse the feed.
+Simply call the `rss-get` function with a URL to download and parse the feed.
 
-	CL-USER > (read-rss "http://www.npr.org/rss/rss.php?id=1001")
+	CL-USER > (rss-get "http://www.npr.org/rss/rss.php?id=1001")
 	#<RSS::RSS-FEED "News">
 
-Use `feed-items` to get a list of all the headlines in the feed.
+The `rss-feed` and `rss-item` classes both derive from the same base-class: `rss-node`, which houses the `xml-node` for that element in the RSS. The base method `rss-query` can be used to extract information from an `rss-node`:
 
-	CL-USER > (feed-items *)
-	(#<RSS::RSS-ITEM "Quitting Your Job For Fantasy Football"> ...)
-
-Fetch the `item-description` of the first headline.
-
-	CL-USER > (item-description (first *))
-	"Drew Dinkmeyer was an investment analyst. Pretty steady job, ..."
-
-Or open it up in the browser...
-
-	CL-USER > (sys:open-url (item-link (first **)))
-	#<HQN-WEB::DARWIN-IC-BROWSER 21F2FEF3>
-
-## Exported Methods
-
-Aside from `read-rss`, the only exported functions are `rss-feed` and `rss-item` accessors. All the slots can be `nil`, so be sure and check if you don't want conditions signaled.
-
-	;; rss-feed accessors
-	(feed-title feed)          ;=> string
-	(feed-link feed)           ;=> string
-	(feed-description feed)    ;=> string
-	(feed-categories feed)     ;=> list
-	(feed-image feed)          ;=> string
-	(feed-ttl feed)            ;=> integer
-	(feed-items feed)          ;=> list
+	(rss-query node element &optional (fmap #'identity))
 	
-	;; rss-item accessors
-	(item-title item)          ;=> string
-	(item-link item)           ;=> string
-	(item-description item)    ;=> string
-	(item-categories item)     ;=> string
-	(item-pub-date item)       ;=> string
-	(item-guid item)           ;=> string
+The optional `fmap` argument is a function that will be applied to the `node-value` of the element (if found) before returning it.
 
-## TODO
+	CL-USER > (rss-query * "title" #'string-upcase)
+	"NEWS"
 
-I'd like to add parsing for the publish date so they can be sorted.
+A plethora of common query functions exist to assist you:
+
+	(rss-title node)        ;=> string
+	(rss-link node)         ;=> url
+	(rss-description node)  ;=> string
+	(rss-image node)        ;=> url
+	(rss-categories node)   ;=> list
+	(rss-content node)      ;=> string
+	(rss-date node)         ;=> universal-time
+
+Some functions only are exposed on an `rss-feed` object:
+
+	(rss-items feed)        ;=> list
+	(rss-ttl feed)          ;=> integer
+	
+And some for the `rss-item` class:
+
+	(rss-guid item)         ;=> string
+
