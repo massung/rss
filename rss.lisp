@@ -18,99 +18,95 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :lw :re :xml :date :http)
+  (:use :cl :lw :date :xml :http)
   (:export
-   #:read-rss
+   #:rss-get
 
-   ;; feed accessors
-   #:feed-title
-   #:feed-link
-   #:feed-description
-   #:feed-categories
-   #:feed-image
-   #:feed-ttl
-   #:feed-items
-
-   ;;item accessors
-   #:item-title
-   #:item-link
-   #:item-description
-   #:item-categories
-   #:item-pub-date
-   #:item-guid))
+   ;; functions
+   #:rss-title
+   #:rss-link
+   #:rss-description
+   #:rss-image
+   #:rss-content
+   #:rss-categories
+   #:rss-date
+   #:rss-guid
+   #:rss-ttl
+   #:rss-items))
 
 (in-package :rss)
 
-(defclass rss-feed ()
-  ((title       :initarg :title       :accessor feed-title)
-   (link        :initarg :link        :accessor feed-link)
-   (description :initarg :description :accessor feed-description)
-   (categories  :initarg :categories  :accessor feed-categories)
-   (image       :initarg :image       :accessor feed-image)
-   (ttl         :initarg :ttl         :accessor feed-ttl)
-   (items       :initarg :items       :accessor feed-items))
-  (:documentation ""))
+(defclass rss-node ()
+  ((node  :initarg :xml-node :reader rss-xml-node))
+  (:documentation "Base interface for RSS feeds and items."))
 
-(defclass rss-item ()
-  ((title       :initarg :title       :accessor item-title)
-   (link        :initarg :link        :accessor item-link)
-   (description :initarg :description :accessor item-description)
-   (categories  :initarg :categories  :accessor item-categories)
-   (pub-date    :initarg :pub-date    :accessor item-pub-date)
-   (guid        :initarg :guid        :accessor item-guid))
-  (:documentation ""))
+(defclass rss-feed (rss-node)
+  ((items :initarg :items :reader rss-items))
+  (:documentation "Interface to an RSS channel."))
 
-(defmethod print-object ((feed rss-feed) s)
+(defclass rss-item (rss-node)
+  ()
+  (:documentation "Interface to an RSS channel."))
+
+(defmethod print-object ((node rss-node) s)
   "Output an RSS feed object to a stream."
-  (print-unreadable-object (feed s :type t)
-    (format s "~s" (feed-title feed))))
+  (print-unreadable-object (node s :type t) (format s "~s" (rss-title node))))
 
-(defmethod print-object ((item rss-item) s)
-  "Output an RSS item object to a stream."
-  (print-unreadable-object (item s :type t)
-    (format s "~s" (item-title item))))
-
-(defun read-rss (url)
+(defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
-  (let ((resp (http-follow (http-get url))))
+  (let ((resp (http-follow (http-get url) :limit redirect-limit)))
     (when (= (response-code resp) 200)
-      (with-slots (request)
-          resp
-        (let ((doc (parse-xml (response-body resp) (request-url request))))
-          (when doc
-            (let ((channel (query-xml doc "/rss/channel" :first t)))
-              (when channel
-                (let ((title (query-xml channel "title" :first t))
-                      (link (query-xml channel "link" :first t))
-                      (description (query-xml channel "description" :first t))
-                      (image (query-xml channel "image/url" :first t))
-                      (ttl (query-xml channel "ttl" :first t)))
-                  (make-instance 'rss-feed
-                                 :title (when title (node-value title))
-                                 :link (when link (parse-url (node-value link)))
-                                 :description (when description (node-value description))
-                                 :image (when image (node-value image))
-                                 :ttl (when ttl (parse-integer (node-value ttl)))
-                                 :categories (parse-categories channel)
-                                 :items (parse-items doc)))))))))))
+      (let ((doc (parse-xml (response-body resp) url)))
+        (when doc
+          (let ((channel (query-xml doc "/rss/channel" :first t)))
+            (when channel
+              (let ((items (query-xml channel "item")))
+                (flet ((make-rss-item (item)
+                         (make-instance 'rss-item :xml-node item)))
+                  (make-instance 'rss-feed :xml-node channel :items (mapcar #'make-rss-item items)))))))))))
 
-(defun parse-items (doc)
-  "Read all the RSS items from an XML document."
-  (flet ((parse-item (item)
-           (let ((title (query-xml item "title" :first t))
-                 (link (query-xml item "link" :first t))
-                 (description (query-xml item "description" :first t))
-                 (pub-date (query-xml item "pubDate" :first t))
-                 (guid (query-xml item "guid" :first t)))
-             (make-instance 'rss-item
-                            :title (when title (node-value title))
-                            :link (when link (parse-url (node-value link)))
-                            :description (when description (node-value description))
-                            :pub-date (when pub-date (encode-universal-rfc822-time (node-value pub-date)))
-                            :guid (when guid (node-value guid))
-                            :categories (parse-categories item)))))
-    (mapcar #'parse-item (query-xml doc "/rss/channel/item"))))
+(defmethod rss-query ((node rss-node) element-name &optional (fmap #'identity))
+  "Lookup the value of an RSS element."
+  (let ((element (query-xml (rss-xml-node node) element-name :first t)))
+    (when element
+      (funcall fmap (node-value element)))))
 
-(defun parse-categories (node)
-  "Find all the categories for a feed or item."
-  (mapcar #'node-value (query-xml node "category")))
+(defmethod rss-title ((node rss-node))
+  "Return the <title> of an RSS item."
+  (rss-query node "title"))
+
+(defmethod rss-link ((node rss-node))
+  "Return the <link> of an RSS item."
+  (rss-query node "link" #'parse-url))
+
+(defmethod rss-description ((node rss-node))
+  "Return the <description> of an RSS item."
+  (rss-query node "description"))
+
+(defmethod rss-image ((node rss-node))
+  "Return the <image> of an RSS item."
+  (rss-query node "image" #'parse-url))
+
+(defmethod rss-categories ((node rss-node))
+  "Return the <category> list of an RSS item."
+  (mapcar #'node-value (query-xml (rss-xml-node node) "category")))
+
+(defmethod rss-content ((item rss-item))
+  "Return the <content:encoded> of an RSS item."
+  (rss-query item "encoded"))
+
+(defmethod rss-date ((item rss-item))
+  "Return the <pubDate> of an RSS item."
+  (rss-query item "pubDate" #'encode-universal-rfc822-time))
+
+(defmethod rss-guid ((item rss-item))
+  "Return the <guid> of an RSS item."
+  (rss-query item "guid"))
+
+(defmethod rss-date ((feed rss-feed))
+  "Return the <lastBuildDate> of an RSS feed."
+  (rss-query feed "lastBuildDate" #'encode-universal-rfc822-time))
+
+(defmethod rss-ttl ((feed rss-feed))
+  "Return the <ttl> of an RSS feed."
+  (rss-query feed "ttl" #'parse-integer))
