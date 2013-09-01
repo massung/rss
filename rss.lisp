@@ -21,8 +21,7 @@
   (:use :cl :lw :date :xml :http)
   (:export
    #:rss-get
-
-   ;; functions
+   #:rss-query
    #:rss-title
    #:rss-link
    #:rss-description
