@@ -64,11 +64,12 @@
                          (make-instance 'rss-item :xml-node item)))
                   (make-instance 'rss-feed :xml-node channel :items (mapcar #'make-rss-item items)))))))))))
 
-(defmethod rss-query ((node rss-node) element-name &optional (fmap #'identity))
+(defmethod rss-query ((node rss-node) element-name &key (if-found #'identity) if-not-found)
   "Lookup the value of an RSS element."
   (let ((element (query-xml (rss-xml-node node) element-name :first t)))
-    (when element
-      (funcall fmap (node-value element)))))
+    (if (null element)
+        if-not-found
+      (funcall if-found (node-value element)))))
 
 (defmethod rss-title ((node rss-node))
   "Return the <title> of an RSS item."
@@ -76,7 +77,7 @@
 
 (defmethod rss-link ((node rss-node))
   "Return the <link> of an RSS item."
-  (rss-query node "link" #'parse-url))
+  (rss-query node "link" :if-found #'parse-url))
 
 (defmethod rss-description ((node rss-node))
   "Return the <description> of an RSS item."
@@ -84,7 +85,7 @@
 
 (defmethod rss-image ((node rss-node))
   "Return the <image> of an RSS item."
-  (rss-query node "image" #'parse-url))
+  (rss-query node "image" :if-found  #'parse-url))
 
 (defmethod rss-categories ((node rss-node))
   "Return the <category> list of an RSS item."
@@ -96,7 +97,7 @@
 
 (defmethod rss-date ((item rss-item))
   "Return the <pubDate> of an RSS item."
-  (rss-query item "pubDate" #'encode-universal-rfc822-time))
+  (rss-query item "pubDate" :if-found  #'encode-universal-rfc822-time :if-not-found (get-universal-time)))
 
 (defmethod rss-guid ((item rss-item))
   "Return the <guid> of an RSS item."
@@ -104,8 +105,8 @@
 
 (defmethod rss-date ((feed rss-feed))
   "Return the <lastBuildDate> of an RSS feed."
-  (rss-query feed "lastBuildDate" #'encode-universal-rfc822-time))
+  (rss-query feed "lastBuildDate" :if-found  #'encode-universal-rfc822-time :if-not-found (get-universal-time)))
 
 (defmethod rss-ttl ((feed rss-feed))
   "Return the <ttl> of an RSS feed."
-  (rss-query feed "ttl" #'parse-integer))
+  (rss-query feed "ttl" :if-found #'parse-integer :if-not-found 0))

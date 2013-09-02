@@ -11,11 +11,11 @@ Simply call the `rss-get` function with a URL to download and parse the feed.
 
 The `rss-feed` and `rss-item` classes both derive from the same base-class: `rss-node`, which houses the `xml-node` for that element in the RSS. The base method `rss-query` can be used to extract information from an `rss-node`:
 
-	(rss-query node element &optional (fmap #'identity))
+	(rss-query node element &key (if-found #'identity) if-not-found)
 	
-The optional `fmap` argument is a function that will be applied to the `node-value` of the element (if found) before returning it.
+The optional `if-found` argument is a function that will be applied to the `node-value` of the element (if found) before returning it. The `if-not-found` will be returned if the element doesn't exist in the node.
 
-	CL-USER > (rss-query * "title" #'string-upcase)
+	CL-USER > (rss-query * "title" :if-found #'string-upcase)
 	"NEWS"
 
 A plethora of common query functions exist to assist you:
