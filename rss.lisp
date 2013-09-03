@@ -77,7 +77,7 @@
 
 (defmethod rss-link ((node rss-node))
   "Return the <link> of an RSS item."
-  (rss-query node "link" :if-found #'parse-url))
+  (rss-query node "link"))
 
 (defmethod rss-description ((node rss-node))
   "Return the <description> of an RSS item."
@@ -85,7 +85,7 @@
 
 (defmethod rss-image ((node rss-node))
   "Return the <image> of an RSS item."
-  (rss-query node "image" :if-found  #'parse-url))
+  (rss-query node "image"))
 
 (defmethod rss-categories ((node rss-node))
   "Return the <category> list of an RSS item."
