@@ -109,4 +109,4 @@
 
 (defmethod rss-ttl ((feed rss-feed))
   "Return the <ttl> of an RSS feed."
-  (rss-query feed "ttl" :if-found #'parse-integer :if-not-found 0))
+  (rss-query feed "ttl" :if-found #'parse-integer))
