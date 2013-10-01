@@ -100,8 +100,9 @@
   (rss-query item "pubDate" :if-found  #'encode-universal-rfc822-time :if-not-found (get-universal-time)))
 
 (defmethod rss-guid ((item rss-item))
-  "Return the <guid> of an RSS item."
-  (rss-query item "guid"))
+  "Return the <guid> of an RSS item. Returns the link if not found."
+  (or (rss-query item "guid")
+      (rss-query item "link")))
 
 (defmethod rss-date ((feed rss-feed))
   "Return the <lastBuildDate> of an RSS feed."
