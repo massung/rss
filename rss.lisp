@@ -83,10 +83,6 @@
   "Return the <description> of an RSS item."
   (rss-query node "description"))
 
-(defmethod rss-image ((node rss-node))
-  "Return the <image> of an RSS item."
-  (rss-query node "image"))
-
 (defmethod rss-categories ((node rss-node))
   "Return the <category> list of an RSS item."
   (mapcar #'node-value (query-xml (rss-xml-node node) "category")))
@@ -111,3 +107,7 @@
 (defmethod rss-ttl ((feed rss-feed))
   "Return the <ttl> of an RSS feed."
   (rss-query feed "ttl" :if-found #'parse-integer))
+
+(defmethod rss-image ((node rss-feed))
+  "Return the <image/url> of an RSS feed."
+  (rss-query node "image/url"))
