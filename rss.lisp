@@ -23,6 +23,7 @@
    #:rss-get
    #:rss-title
    #:rss-link
+   #:rss-description
    #:rss-content
    #:rss-date
    #:rss-ttl
@@ -33,12 +34,13 @@
 (in-package :rss)
 
 (defclass rss-feed ()
-  ((title :initarg :title :reader rss-title)
-   (link  :initarg :link  :reader rss-link)
-   (date  :initarg :date  :reader rss-date)
-   (ttl   :initarg :ttl   :reader rss-ttl)
-   (image :initarg :image :reader rss-image)
-   (items :initarg :items :reader rss-items))
+  ((title :initarg :title       :reader rss-title)
+   (link  :initarg :link        :reader rss-link)
+   (desc  :initarg :description :reader rss-description)
+   (date  :initarg :date        :reader rss-date)
+   (ttl   :initarg :ttl         :reader rss-ttl)
+   (image :initarg :image       :reader rss-image)
+   (items :initarg :items       :reader rss-items))
   (:documentation "RSS atom feed or channel."))
 
 (defclass rss-item ()
@@ -99,6 +101,7 @@
   (make-instance 'rss-feed
                  :title (rss-query-value feed "title" :if-found #'decode-html)
                  :link (rss-query-attribute feed "link" "href")
+                 :description (rss-query-value feed "subtitle")
                  :image (or (rss-query-value feed "logo")
                             (rss-query-value feed "icon"))
                  :ttl (rss-query-value feed "ttl" :if-found #'parse-integer)
@@ -125,6 +128,7 @@
   (make-instance 'rss-feed
                  :title (rss-query-value channel "title" :if-found #'decode-html)
                  :link (rss-query-value channel "link")
+                 :description (rss-query-value channel "description")
                  :image (rss-query-value channel "image/url")
                  :ttl (rss-query-value channel "ttl" :if-found #'parse-integer)
                  :date (or (rss-query-value channel "lastBuildDate" :if-found #'encode-universal-rfc822-time)
