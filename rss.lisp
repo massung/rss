@@ -21,6 +21,7 @@
   (:use :cl :lw :date :xml :http)
   (:export
    #:rss-get
+   #:rss-parse
    #:rss-title
    #:rss-link
    #:rss-description
@@ -67,9 +68,16 @@
   "Fetch a feed from a URL and parse it."
   (let ((resp (http-follow (http-get url) :limit redirect-limit)))
     (when (= (response-code resp) 200)
-      (let ((doc (parse-xml (response-body resp) url)))
-        (when doc
-          (parse-rss doc))))))
+      (when-let (doc (parse-xml (response-body resp) url))
+        (rss-parse doc)))))
+
+(defun rss-parse (doc)
+  "Parse an XML document as an RSS feed."
+  (when doc
+    (when-let (feed (query-xml doc "/feed" :first t))
+      (return-from rss-parse (parse-rss-feed feed)))
+    (when-let (channel (query-xml doc "/rss/channel" :first t))
+      (return-from rss-parse (parse-rss-channel channel)))))
 
 (defun rss-query (node element-name &key (if-found #'node-value))
   "Lookup the an RSS element."
@@ -88,13 +96,6 @@
              (when attrib
                (funcall if-found (node-value attrib))))))
     (rss-query node element-name :if-found #'query-attrib)))
-
-(defun parse-rss (doc)
-  "Handle the various formats for RSS feeds."
-  (when-let (feed (query-xml doc "/feed" :first t))
-    (return-from parse-rss (parse-rss-feed feed)))
-  (when-let (channel (query-xml doc "/rss/channel" :first t))
-    (return-from parse-rss (parse-rss-channel channel))))
 
 (defun parse-rss-feed (feed)
   "Return an RSS feed from an atom feed."
