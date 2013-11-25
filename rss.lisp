@@ -26,6 +26,7 @@
    #:rss-link
    #:rss-description
    #:rss-content
+   #:rss-author
    #:rss-date
    #:rss-ttl
    #:rss-guid
@@ -143,7 +144,8 @@
                  :title (rss-query-value item "title" :if-found #'decode-html)
                  :author (rss-query-value item "author")
                  :link (rss-query-value item "link")
-                 :content (rss-query-value item "description" :if-found #'decode-html)
+                 :content (or (rss-query-value item "encoded" :if-found #'decode-html)
+                              (rss-query-value item "description" :if-found #'decode-html))
                  :image (rss-query-value item "image/url")
                  :guid (rss-query-value item "guid")
                  :date (or (rss-query-value item "lastBuildDate" :if-found #'encode-universal-rfc822-time)
