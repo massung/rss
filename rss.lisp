@@ -99,9 +99,9 @@
     (rss-query node element-name :if-found #'query-attrib)))
 
 (defun parse-rss-feed (feed)
-  "Return an RSS feed from an atom feed."
+  "Return an RSS feed from an atom feed."v
   (make-instance 'rss-feed
-                 :title (rss-query-value feed "title" :if-found #'decode-html)
+                 :title (rss-query-value feed "title")
                  :link (rss-query-attribute feed "link" "href")
                  :description (rss-query-value feed "subtitle")
                  :image (or (rss-query-value feed "logo")
@@ -114,10 +114,10 @@
 (defun parse-feed-entry (entry)
   "Returns an RSS item from an atom feed."
   (make-instance 'rss-item
-                 :title (rss-query-value entry "title" :if-found #'decode-html)
+                 :title (rss-query-value entry "title")
                  :author (rss-query-value entry "author")
                  :link (rss-query-attribute entry "link" "href")
-                 :content (rss-query-value entry "content" :if-found #'decode-html)
+                 :content (rss-query-value entry "content")
                  :guid (rss-query-value entry "id")
                  :image (or (rss-query-value entry "logo")
                             (rss-query-value entry "icon"))
@@ -128,7 +128,7 @@
 (defun parse-rss-channel (channel)
   "Returns an RSS feed from a channel."
   (make-instance 'rss-feed
-                 :title (rss-query-value channel "title" :if-found #'decode-html)
+                 :title (rss-query-value channel "title")
                  :link (rss-query-value channel "link")
                  :description (rss-query-value channel "description")
                  :image (rss-query-value channel "image/url")
@@ -141,11 +141,11 @@
 (defun parse-channel-item (item)
   "Returns an RSS item from an atom feed."
   (make-instance 'rss-item
-                 :title (rss-query-value item "title" :if-found #'decode-html)
+                 :title (rss-query-value item "title")
                  :author (rss-query-value item "author")
                  :link (rss-query-value item "link")
-                 :content (or (rss-query-value item "encoded" :if-found #'decode-html)
-                              (rss-query-value item "description" :if-found #'decode-html))
+                 :content (or (rss-query-value item "encoded")
+                              (rss-query-value item "description"))
                  :image (rss-query-value item "image/url")
                  :guid (rss-query-value item "guid")
                  :date (or (rss-query-value item "lastBuildDate" :if-found #'encode-universal-rfc822-time)
