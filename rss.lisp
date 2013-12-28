@@ -68,7 +68,7 @@
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
   (let ((resp (http-follow (http-get url) :limit redirect-limit)))
-    (when (= (response-code resp) 200)
+    (when (and resp (= (response-code resp) 200))
       (when-let (doc (parse-xml (response-body resp) url))
         (rss-parse doc)))))
 
@@ -99,7 +99,7 @@
     (rss-query node element-name :if-found #'query-attrib)))
 
 (defun parse-rss-feed (feed)
-  "Return an RSS feed from an atom feed."v
+  "Return an RSS feed from an atom feed."
   (make-instance 'rss-feed
                  :title (rss-query-value feed "title")
                  :link (rss-query-attribute feed "link" "href")
