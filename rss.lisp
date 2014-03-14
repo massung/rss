@@ -18,7 +18,7 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :lw :date :xml :http)
+  (:use :cl :lw :rfc-date :xml :http)
   (:export
    #:rss-get
    #:rss-parse
@@ -67,10 +67,9 @@
 
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
-  (let ((resp (http-follow (http-get url) :limit redirect-limit)))
-    (when (and resp (= (response-code resp) 200))
-      (when-let (doc (parse-xml (response-body resp) url))
-        (rss-parse doc)))))
+  (with-response (resp (http-follow (http-get url) :limit redirect-limit))
+    (when-let (doc (parse-xml (response-body resp) url))
+      (rss-parse doc))))
 
 (defun rss-parse (doc)
   "Parse an XML document as an RSS feed."
@@ -93,9 +92,8 @@
 (defun rss-query-attribute (node element-name attribute &key (if-found #'identity))
   "Lookup the attribute of an RSS element."
   (flet ((query-attrib (n)
-           (let ((attrib (query-attribute n attribute)))
-             (when attrib
-               (funcall if-found (node-value attrib))))))
+           (when-let (attrib (query-attribute n attribute))
+             (funcall if-found (node-value attrib)))))
     (rss-query node element-name :if-found #'query-attrib)))
 
 (defun parse-rss-feed (feed)
