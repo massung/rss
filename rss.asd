@@ -8,7 +8,7 @@
   :version "1.0"
   :author "Jeffrey Massung"
   :license "Apache 2.0"
-  :description "RSS feed parser for LispWorks."
+  :description "RSS feed parser and aggregator for LispWorks."
   :serial t
-  :components ((:file "rss"))
-  :depends-on ("http" "xml" "date"))
+  :components ((:file "rss") (:file "aggregator"))
+  :depends-on ("http" "xml" "rfc-date"))
