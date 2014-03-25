@@ -91,6 +91,31 @@
              (funcall if-found (node-value attrib)))))
     (rss-query node element-name :if-found #'query-attrib)))
 
+
+(defmacro define-xml-decoder ((decoder class) &body initforms)
+  ""
+  (let ((node (gensym))
+        (a (gensym)))
+    `(defun ,decoder (,node)
+       ,(loop :for form :in initforms
+              :append (destructuring-bind (initarg (tag &optional attribute) &optional (if-found #'node-value))
+                          form
+                        `(,initarg (when-let (,a (find-xml ,node ,tag))
+                                     ,(when attribute
+                                        `(setf ,a (find-attribute ,a ,attribute)))
+                                     (funcall ,if-found ,a))))
+              :into initargs
+              :finally (return `(make-instance ',class ,@initargs))))))
+
+(define-xml-decoder (decode-atom-feed rss-feed)
+  (:title    "title")
+  (:subtitle "subtitle")
+  (:link     "link" "href")
+  (:ttl      "ttl")
+  (:date     "updated")
+  (:image    "logo")
+  (:items    "entry"))
+
 (defun rss-query-date (node locations encode-function)
   "Lookup a date using possible locations."
   (loop :for location :in locations
@@ -102,25 +127,17 @@
 (defun rss-parse (node)
   "Returns an RSS feed from a channel."
   (make-instance 'rss-feed
-                 :title    (rss-query-value node "title")
-                 :subtitle (rss-query-value node "description")
-                 :link     (rss-query-value node "link")
-                 :image    (rss-query-value node "image/url")
-                 :ttl      (rss-query-value node "ttl" :if-found #'parse-integer)
+                 :title    (find-xml node "title"))
+                 :subtitle (find-xml node "description"))
+                 :link     (find-xml node "link"))
+                 :image    (find-xml node "image/url"))
+                 :ttl      (nth-value 1 (find-xml node "ttl"))rss-query-value node "ttl" :if-found #'parse-integer)
                  :date     (rss-query-date node '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
                  :items    (mapcar #'rss-parse-item (query-xml node "item"))))
 
 (defun rss-parse-atom (node)
   "Return an RSS feed from an atom feed."
   (make-instance 'rss-feed
-                 :title    (rss-query-value node "title")
-                 :subtitle (rss-query-value node "subtitle")
-                 :link     (rss-query-attribute node "link" "href")
-                 :ttl      (rss-query-value node "ttl" :if-found #'parse-integer)
-                 :date     (rss-query-date node '("updated") #'encode-universal-rfc3339-time)
-                 :image    (or (rss-query-value node "logo")
-                               (rss-query-value node "icon"))
-                 :items    (mapcar #'rss-parse-atom-entry (query-xml node "entry"))))
 
 (defun rss-parse-item (node)
   "Returns an RSS item from an atom feed."
