@@ -36,23 +36,23 @@
 (in-package :rss)
 
 (defclass rss-feed ()
-  ((title :initarg :title       :reader rss-title)
-   (link  :initarg :link        :reader rss-link)
-   (desc  :initarg :description :reader rss-description)
-   (date  :initarg :date        :reader rss-date)
-   (ttl   :initarg :ttl         :reader rss-ttl)
-   (image :initarg :image       :reader rss-image)
-   (items :initarg :items       :reader rss-items))
+  ((title   :initarg :title       :reader rss-title)
+   (link    :initarg :link        :reader rss-link)
+   (desc    :initarg :description :reader rss-description)
+   (date    :initarg :date        :reader rss-date)
+   (ttl     :initarg :ttl         :reader rss-ttl)
+   (image   :initarg :image       :reader rss-image)
+   (items   :initarg :items       :reader rss-items))
   (:documentation "RSS atom feed or channel."))
 
 (defclass rss-item ()
-  ((title   :initarg :title   :reader rss-title)
-   (link    :initarg :link    :reader rss-link)
-   (content :initarg :content :reader rss-content)
-   (date    :initarg :date    :reader rss-date)
-   (author  :initarg :author  :reader rss-author)
-   (guid    :initarg :guid    :reader rss-guid)
-   (image   :initarg :image   :reader rss-image))
+  ((title   :initarg :title       :reader rss-title)
+   (link    :initarg :link        :reader rss-link)
+   (content :initarg :content     :reader rss-content)
+   (date    :initarg :date        :reader rss-date)
+   (author  :initarg :author      :reader rss-author)
+   (guid    :initarg :guid        :reader rss-guid)
+   (image   :initarg :image       :reader rss-image))
   (:documentation "RSS atom entry or channel item."))
 
 (defmethod print-object ((feed rss-feed) s)
@@ -69,15 +69,10 @@
   "Fetch a feed from a URL and parse it."
   (with-response (resp (http-follow (http-get url) :limit redirect-limit))
     (when-let (doc (parse-xml (response-body resp) url))
-      (rss-parse doc))))
-
-(defun rss-parse (doc)
-  "Parse an XML document as an RSS feed."
-  (when doc
-    (when-let (feed (query-xml doc "/feed" :first t))
-      (return-from rss-parse (parse-rss-feed feed)))
-    (when-let (channel (query-xml doc "/rss/channel" :first t))
-      (return-from rss-parse (parse-rss-channel channel)))))
+      (when-let (node (query-xml doc "/feed" :first t))
+        (return-from rss-get (rss-parse-atom node)))
+      (when-let (node (query-xml doc "/rss/channel" :first t))
+        (return-from rss-get (rss-parse node))))))
 
 (defun rss-query (node element-name &key (if-found #'node-value))
   "Lookup the an RSS element."
@@ -96,56 +91,56 @@
              (funcall if-found (node-value attrib)))))
     (rss-query node element-name :if-found #'query-attrib)))
 
-(defun parse-rss-feed (feed)
-  "Return an RSS feed from an atom feed."
-  (make-instance 'rss-feed
-                 :title (rss-query-value feed "title")
-                 :link (rss-query-attribute feed "link" "href")
-                 :description (rss-query-value feed "subtitle")
-                 :image (or (rss-query-value feed "logo")
-                            (rss-query-value feed "icon"))
-                 :ttl (rss-query-value feed "ttl" :if-found #'parse-integer)
-                 :date (or (rss-query-value feed "updated" :if-found #'encode-universal-rfc3339-time)
-                           (get-universal-time))
-                 :items (mapcar #'parse-feed-entry (query-xml feed "entry"))))
+(defun rss-query-date (node locations encode-function)
+  "Lookup a date using possible locations."
+  (loop :for location :in locations
+        :for date := (rss-query-value node location :if-found encode-function)
+        :when date
+        :return date
+        :finally (return (get-universal-time))))
 
-(defun parse-feed-entry (entry)
-  "Returns an RSS item from an atom feed."
-  (make-instance 'rss-item
-                 :title (rss-query-value entry "title")
-                 :author (rss-query-value entry "author")
-                 :link (rss-query-attribute entry "link" "href")
-                 :content (rss-query-value entry "content")
-                 :guid (rss-query-value entry "id")
-                 :image (or (rss-query-value entry "logo")
-                            (rss-query-value entry "icon"))
-                 :date (or (rss-query-value entry "updated" :if-found #'encode-universal-rfc3339-time)
-                           (rss-query-value entry "published" :if-found #'encode-universal-rfc3339-time)
-                           (get-universal-time))))
-
-(defun parse-rss-channel (channel)
+(defun rss-parse (node)
   "Returns an RSS feed from a channel."
   (make-instance 'rss-feed
-                 :title (rss-query-value channel "title")
-                 :link (rss-query-value channel "link")
-                 :description (rss-query-value channel "description")
-                 :image (rss-query-value channel "image/url")
-                 :ttl (rss-query-value channel "ttl" :if-found #'parse-integer)
-                 :date (or (rss-query-value channel "lastBuildDate" :if-found #'encode-universal-rfc822-time)
-                           (rss-query-value channel "pubDate" :if-found #'encode-universal-rfc822-time)
-                           (get-universal-time))
-                 :items (mapcar #'parse-channel-item (query-xml channel "item"))))
+                 :title       (rss-query-value node "title")
+                 :link        (rss-query-value node "link")
+                 :description (rss-query-value node "description")
+                 :image       (rss-query-value node "image/url")
+                 :ttl         (rss-query-value node "ttl" :if-found #'parse-integer)
+                 :date        (rss-query-date node '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
+                 :items       (mapcar #'rss-parse-item (query-xml node "item"))))
 
-(defun parse-channel-item (item)
+(defun rss-parse-atom (node)
+  "Return an RSS feed from an atom feed."
+  (make-instance 'rss-feed
+                 :title       (rss-query-value node "title")
+                 :link        (rss-query-attribute node "link" "href")
+                 :description (rss-query-value node "subtitle")
+                 :ttl         (rss-query-value node "ttl" :if-found #'parse-integer)
+                 :date        (rss-query-date node '("updated") #'encode-universal-rfc3339-time)
+                 :image       (or (rss-query-value node "logo")
+                                  (rss-query-value node "icon"))
+                 :items       (mapcar #'rss-parse-atom-entry (query-xml node "entry"))))
+
+(defun rss-parse-item (node)
   "Returns an RSS item from an atom feed."
   (make-instance 'rss-item
-                 :title (rss-query-value item "title")
-                 :author (rss-query-value item "author")
-                 :link (rss-query-value item "link")
-                 :content (or (rss-query-value item "encoded")
-                              (rss-query-value item "description"))
-                 :image (rss-query-value item "image/url")
-                 :guid (rss-query-value item "guid")
-                 :date (or (rss-query-value item "lastBuildDate" :if-found #'encode-universal-rfc822-time)
-                           (rss-query-value item "pubDate" :if-found #'encode-universal-rfc822-time)
-                           (get-universal-time))))
+                 :title   (rss-query-value node "title")
+                 :author  (rss-query-value node "author")
+                 :link    (rss-query-value node "link")
+                 :guid    (rss-query-value node "guid")
+                 :content (rss-query-value node "description")
+                 :date    (rss-query-date node '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
+                 :image   (rss-query-value node "image/url")))
+
+(defun rss-parse-atom-entry (node)
+  "Returns an RSS item from an atom feed."
+  (make-instance 'rss-item
+                 :title   (rss-query-value node "title")
+                 :author  (rss-query-value node "author")
+                 :link    (rss-query-attribute node "link" "href")
+                 :content (rss-query-value node "content")
+                 :guid    (rss-query-value node "id")
+                 :date    (rss-query-date node '("updated" "published") #'encode-universal-rfc3339-time)
+                 :image   (or (rss-query-value node "logo")
+                              (rss-query-value node "icon"))))
