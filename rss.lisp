@@ -24,8 +24,12 @@
    #:rss-parse
    #:rss-title
    #:rss-subtitle
+   #:rss-summary
    #:rss-link
    #:rss-content
+   #:rss-content-type
+   #:rss-content-link
+   #:rss-content-find
    #:rss-author
    #:rss-date
    #:rss-ttl
@@ -48,12 +52,17 @@
 (defclass rss-item ()
   ((title     :initarg :title     :reader rss-title)
    (link      :initarg :link      :reader rss-link)
+   (summary   :initarg :summary   :reader rss-summary)
    (content   :initarg :content   :reader rss-content)
-   (enclosure :initarg :enclosure :reader rss-enclosure)
    (date      :initarg :date      :reader rss-date)
    (author    :initarg :author    :reader rss-author)
    (guid      :initarg :guid      :reader rss-guid))
   (:documentation "RSS atom entry or channel item."))
+
+(defclass rss-content ()
+  ((type      :initarg :type      :reader rss-content-type)
+   (link      :initarg :link      :reader rss-content-link))
+  (:documentation "RSS item content data."))
 
 (defmethod print-object ((feed rss-feed) s)
   "Output an RSS feed object to a stream."
@@ -78,11 +87,19 @@
       (when-let (channel (find-xml doc "/rss/channel"))
         (return-from rss-get (rss-parse channel))))))
 
-(defun rss-query (node &rest chain)
+(defun rss-content-find (item type)
+  "Returns a list of rss-content objects matching a particular type in an rss-item."
+  (flet ((match-content-p (content)
+           (zerop (search type (rss-content-type content) :test #'string=))))
+    (remove-if-not #'match-content-p (rss-content item))))
+
+(defun rss-query (node &optional if-found)
   "Apply an XML node through a chain of functions until NIL or the final result."
   (handler-case
       (when-let (value (and node (node-value node)))
-        (loop :for f :in chain :while value :do (setf value (funcall f value)) :finally (return value)))
+        (if (null if-found)
+            value
+          (funcall if-found value)))
     (error (c) nil)))
 
 (defun rss-query-date (node locations encode)
@@ -114,8 +131,10 @@
                  :title      (rss-query (find-xml item "title"))
                  :author     (rss-query (find-xml item "author"))
                  :link       (rss-query (find-xml item "link"))
-                 :content    (rss-query (find-xml item "description"))
-                 :enclosure  (rss-query (find-xml item "enclosure") #'rss-parse-enclosure)
+                 :summary    (rss-query (find-xml item "description"))
+                 
+                 ;; find multimedia content
+                 :content    (mapcar #'rss-parse-enclosure (query-xml item "enclosure"))
 
                  ;; RSS 2.0 items only have a publish date
                  :date       (rss-query-date item '("pubDate") #'encode-universal-rfc822-time)
@@ -126,8 +145,9 @@
 
 (defun rss-parse-enclosure (node)
   "Parse the attributes of an RSS item enclosure."
-  (list (rss-query (find-attribute node "url"))
-        (rss-query (find-attribute node "type"))))
+  (make-instance 'rss-content
+                 :link (rss-query (find-attribute node "url"))
+                 :type (rss-query (find-attribute node "type"))))
 
 (defun rss-parse-atom (atom)
   "Parse the items of an RSS 2.0 channel."
@@ -152,8 +172,11 @@
   (make-instance 'rss-item
                  :title      (rss-query (find-xml entry "title"))
                  :author     (rss-query (find-xml entry "author"))
-                 :content    (rss-query (find-xml entry "content"))
                  :link       (rss-query (find-xml entry "link") #'rss-parse-atom-link)
+                 :summary    (rss-query (find-xml entry "summary"))
+
+                 ;; look for multimedia content
+                 :content    (mapcan #'rss-parse-atom-content (rss-query (query-xml entry "content")))
 
                  ;; use the unique id if present, otherwise the entry link
                  :guid       (or (rss-query (find-xml entry "id"))
@@ -166,3 +189,9 @@
   "Links in ATOM are in an HREF attribute."
   (when-let (href (find-attribute node "href"))
     (node-value href)))
+
+(defun rss-parse-atom-content (node)
+  "Parse the attributes of an ATOM content tag."
+  (make-instance 'rss-content
+                 :link (rss-query (find-attribute node "src"))
+                 :type (rss-query (find-attribute node "type"))))

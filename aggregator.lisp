@@ -30,55 +30,71 @@
    #:rss-aggregator-headlines
    #:rss-aggregator-feeds
 
-   ;; feed reader functions
-   #:rss-feed-reader-title
-   #:rss-feed-reader-url
-   #:rss-feed-reader-process
-
    ;; headline reader functions
    #:rss-headline-source
    #:rss-headline-item))
 
 (in-package :rss-aggregator)
 
-(defconstant +img-re+ (re:compile-re "<img[^>]+>")
-  "Pattern for finding an img tag in a description string.")
-(defconstant +src-re+ (re:compile-re "src%s*=%s*['\"]([^'\"]+)")
-  "Pattern for finding the src attribute in an img tag.")
-
 (defclass rss-aggregator ()
-  ((feeds     :initarg :feed-urls       :reader   rss-aggregator-feeds    :initform nil)
-   (callback  :initarg :update-callback :accessor rss-aggregator-callback :initform nil)
+  ((name      :initarg :name              :reader rss-aggregator-name     :initform nil)
+   (callback  :initarg :headline-callback :reader rss-aggregator-callback :initform nil)
 
    ;; internal members
+   (feeds     :initform nil)
    (process   :initform nil)
    (mailbox   :initform nil)
-   (headlines :initform nil)
-   (readers   :initform nil))
+   (headlines :initform nil))
   (:documentation "A collector of news headlines from feed processes."))
 
+(defclass rss-feed-reader ()
+  ((title   :initarg :title   :accessor rss-feed-reader-title   :initform nil)
+   (url     :initarg :url     :accessor rss-feed-reader-url     :initform nil)
+   (process :initarg :process :accessor rss-feed-reader-process :initform nil))
+  (:documentation "Maps a URL to a process that sends headlines to an aggregator."))
+
 (defclass rss-headline ()
-  ((source :initarg :source :reader rss-headline-source)
-   (item   :initarg :item   :reader rss-headline-item))
-  (:documentation "An rss-item with source."))
+  ((source :initarg :source :reader rss-headline-source :initform nil)
+   (item   :initarg :item   :reader rss-headline-item   :initform nil))
+  (:documentation "Tracks an rss-item to its source."))
+
+(defmethod print-object ((aggregator rss-aggregator) stream)
+  "Output an aggregator to a stream."
+  (print-unreadable-object (aggregator stream :type t)
+    (with-slots (name process headlines feeds)
+        aggregator
+      (format stream "~s (~:[inactive~;active~]) with ~d feed~:p and ~d headline~:p"
+              name
+              (process-alive-p process)
+              (length feeds)
+              (length headlines)))))
+
+(defmethod print-object ((feed rss-feed-reader) stream)
+  "Output a feed reader to a stream."
+  (print-unreadable-object (feed stream :type t)
+    (with-slots (title process)
+        feed
+      (format stream "~s" (or title (process-name process))))))
 
 (defmethod print-object ((headline rss-headline) stream)
   "Output a headline to a stream."
   (print-unreadable-object (headline stream :type t)
-    (prin1 (rss-title (rss-headline-item headline)) stream)))
+    (with-slots (source item)
+        headline
+      (format stream "~s via ~s" (rss-title item) source))))
 
 (defmethod initialize-instance :after ((aggregator rss-aggregator) &key)
-  "Start the aggregator immediately."
-  (rss-aggregator-start aggregator))
+  "Immediately create the mailbox so feed readers can send stuff to it."
+  (with-slots (mailbox)
+      aggregator
+    (setf mailbox (make-mailbox))))
 
 (defmethod rss-aggregator-start ((aggregator rss-aggregator))
   "Spin up the reader processes."
-  (with-slots (mailbox process headlines readers callback feeds)
+  (with-slots (name mailbox process headlines callback)
       aggregator
     (labels ((headline-guid (h)
-               (let ((item (rss-headline-item h)))
-                 (or (rss-guid item)
-                     (rss-link item))))
+               (rss-guid (rss-headline-item h)))
 
              ;; the aggregation process
              (aggregate ()
@@ -86,67 +102,84 @@
                        (unless (find (headline-guid headline) headlines :key #'headline-guid :test #'string=)
                          (sys:atomic-push headline headlines)
 
-                         ;; notify another process
+                         ;; notify of a new headline
                          (when callback
-                           (funcall callback aggregator)))))))
-    
-      ;; create the headline mailbox
-      (setf mailbox (make-mailbox))
+                           (funcall callback aggregator headline)))))))
 
       ;; start the aggregation process
-      (setf process (process-run-function "RSS Aggregator" () #'aggregate))
-
-      ;; start all the reader processes
-      (setf readers (loop :for feed :in feeds :collect (rss-aggregate aggregator feed))))))
+      (unless process
+        (setf process (process-run-function (or name "RSS Aggregator") () #'aggregate))))))
 
 (defmethod rss-aggregator-stop ((aggregator rss-aggregator))
-  "Stop all feed reader processes and the headline aggregator process."
-  (with-slots (mailbox readers process)
+  "Stop all feed processes and the headline aggregator process. Feeds and headlines stay intact."
+  (with-slots (mailbox process feeds)
       aggregator
 
-    ;; stop processing all the feeds and the aggregator process
-    (mapc #'process-kill (cons process readers))
+    ;; stop processing all the feeds first
+    (loop :for feed :in feeds :do (when-let (process (rss-feed-reader-process feed))
+                                    (process-kill process)))
+
+    ;; stop the aggregator process
+    (process-kill process)
+
+    ;; create a new mailbox
+    (setf mailbox (make-mailbox))
     
-    ;; clear the process data and mailbox
-    (setf readers nil
-          process nil
-          mailbox nil)))
+    ;; clear the process data
+    (setf process nil)))
+
+(defmethod rss-aggregator-clear ((aggregator rss-aggregator))
+  "Clear all the headlines from the aggregator."
+  (with-slots (headlines)
+      aggregator
+    (sys:atomic-exchange headlines nil)))
 
 (defmethod rss-aggregator-reset ((aggregator rss-aggregator))
   "Stop aggregating, clear headlines, and start again."
-  (with-slots (headlines)
+  (with-slots (headlines feeds mailbox)
       aggregator
 
-    ;; clear the headlines
-    (setf headlines nil)
-
-    ;; stop aggregating and start again
+    ;; stop, clear, and start
     (rss-aggregator-stop aggregator)
-    (rss-aggregator-start aggregator)))
+    (rss-aggregator-clear aggregator)
+    (rss-aggregator-start aggregator)
 
-(defmethod rss-aggregate ((aggregator rss-aggregator) url)
+    ;; loop over all the feeds and restart their processes
+    (loop :for feed :in feeds :do (rss-aggregate-feed feed mailbox))))
+
+(defmethod rss-aggregate ((aggregator rss-aggregator) url &optional title)
   "Create a new feed process that will continuously push headlines to the aggregator."
-  (with-slots (mailbox)
+  (with-slots (mailbox feeds)
       aggregator
     (with-url (url url)
-      (flet ((reader-process ()
-               (loop (handler-case
-                         (when-let (feed (rss-get url))
+      (let ((feed (make-instance 'rss-feed-reader :title title :url url)))
+        (when (rss-aggregate-feed feed mailbox)
+          (prog1 t (push feed feeds)))))))
 
-                           ;; rename the process to that of the feed
-                           (when (rss-title feed)
-                             (setf (process-name *current-process*) (rss-title feed)))
-
+(defmethod rss-aggregate-feed ((feed rss-feed-reader) mailbox)
+  "Starts the feed reader process that will send headlines to a mailbox."
+  (with-slots (url title process)
+      feed
+    (flet ((reader ()
+             (loop (handler-case
+                       (when-let (feed (rss-get url))
+                         
+                         ;; rename the process to that of the feed or url
+                         (let ((source (or title (rss-title feed) (format-url url))))
+                           (setf (process-name *current-process*) source)
+                             
                            ;; send all the headlines to the aggregator
-                           (loop :with source := (or (rss-title feed) (format-url url))
-                                 :for item :in (rss-items feed)
-                                 :do (mailbox-send mailbox (make-instance 'rss-headline :source source :item item))
-                                 :finally (current-process-pause (* (or (rss-ttl feed) 5) 60))))
-                       (error (c)
-                         (current-process-pause 300))))))
+                           (loop :for item :in (rss-items feed)
+                                 :for headline := (make-instance 'rss-headline :source source :item item)
+                                 :do (mailbox-send mailbox headline)
+                                 :finally (current-process-pause (* (or (rss-ttl feed) 5) 60)))))
 
-        ;; start the feed process
-        (process-run-function (format-url url) '() #'reader-process)))))
+                     ;; if something bad happened, just wait and try again
+                     (error (c)
+                       (current-process-pause 300))))))
+          
+      ;; start the feed process only if the feed isn't currently in the feed list
+      (setf (rss-feed-reader-process feed) (process-run-function (format-url url) '() #'reader)))))
 
 (defmethod rss-aggregator-headlines ((aggregator rss-aggregator))
   "Get a sorted list of headlines from the aggregator."
