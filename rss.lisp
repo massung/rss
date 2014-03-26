@@ -36,23 +36,23 @@
 (in-package :rss)
 
 (defclass rss-feed ()
-  ((title    :initarg :title    :reader rss-title)
-   (subtitle :initarg :subtitle :reader rss-subtitle)
-   (link     :initarg :link     :reader rss-link)
-   (date     :initarg :date     :reader rss-date)
-   (ttl      :initarg :ttl      :reader rss-ttl)
-   (image    :initarg :image    :reader rss-image)
-   (items    :initarg :items    :reader rss-items))
+  ((title     :initarg :title     :reader rss-title)
+   (subtitle  :initarg :subtitle  :reader rss-subtitle)
+   (link      :initarg :link      :reader rss-link)
+   (date      :initarg :date      :reader rss-date)
+   (ttl       :initarg :ttl       :reader rss-ttl)
+   (image     :initarg :image     :reader rss-image)
+   (items     :initarg :items     :reader rss-items))
   (:documentation "RSS atom feed or channel."))
 
 (defclass rss-item ()
-  ((title    :initarg :title    :reader rss-title)
-   (link     :initarg :link     :reader rss-link)
-   (content  :initarg :content  :reader rss-content)
-   (date     :initarg :date     :reader rss-date)
-   (author   :initarg :author   :reader rss-author)
-   (guid     :initarg :guid     :reader rss-guid)
-   (image    :initarg :image    :reader rss-image))
+  ((title     :initarg :title     :reader rss-title)
+   (link      :initarg :link      :reader rss-link)
+   (content   :initarg :content   :reader rss-content)
+   (enclosure :initarg :enclosure :reader rss-enclosure)
+   (date      :initarg :date      :reader rss-date)
+   (author    :initarg :author    :reader rss-author)
+   (guid      :initarg :guid      :reader rss-guid))
   (:documentation "RSS atom entry or channel item."))
 
 (defmethod print-object ((feed rss-feed) s)
@@ -69,95 +69,100 @@
   "Fetch a feed from a URL and parse it."
   (with-response (resp (http-follow (http-get url) :limit redirect-limit))
     (when-let (doc (parse-xml (response-body resp) url))
-      (when-let (node (query-xml doc "/feed" :first t))
-        (return-from rss-get (rss-parse-atom node)))
-      (when-let (node (query-xml doc "/rss/channel" :first t))
-        (return-from rss-get (rss-parse node))))))
 
-(defun rss-query (node element-name &key (if-found #'node-value))
-  "Lookup the an RSS element."
-  (let ((element (query-xml node element-name :first t)))
-    (when element
-      (funcall if-found element))))
+      ;; check for an ATOM feed
+      (when-let (atom (find-xml doc "/feed"))
+        (return-from rss-get (rss-parse-atom atom)))
 
-(defun rss-query-value (node element-name &key (if-found #'identity))
-  "Lookup the inner-text of an RSS element."
-  (rss-query node element-name :if-found #'(lambda (n) (funcall if-found (node-value n)))))
+      ;; check for an RSS 2.0 channel
+      (when-let (channel (find-xml doc "/rss/channel"))
+        (return-from rss-get (rss-parse channel))))))
 
-(defun rss-query-attribute (node element-name attribute &key (if-found #'identity))
-  "Lookup the attribute of an RSS element."
-  (flet ((query-attrib (n)
-           (when-let (attrib (query-attribute n attribute))
-             (funcall if-found (node-value attrib)))))
-    (rss-query node element-name :if-found #'query-attrib)))
+(defun rss-query (node &rest chain)
+  "Apply an XML node through a chain of functions until NIL or the final result."
+  (handler-case
+      (when-let (value (and node (node-value node)))
+        (loop :for f :in chain :while value :do (setf value (funcall f value)) :finally (return value)))
+    (error (c) nil)))
 
-
-(defmacro define-xml-decoder ((decoder class) &body initforms)
-  ""
-  (let ((node (gensym))
-        (a (gensym)))
-    `(defun ,decoder (,node)
-       ,(loop :for form :in initforms
-              :append (destructuring-bind (initarg (tag &optional attribute) &optional (if-found #'node-value))
-                          form
-                        `(,initarg (when-let (,a (find-xml ,node ,tag))
-                                     ,(when attribute
-                                        `(setf ,a (find-attribute ,a ,attribute)))
-                                     (funcall ,if-found ,a))))
-              :into initargs
-              :finally (return `(make-instance ',class ,@initargs))))))
-
-(define-xml-decoder (decode-atom-feed rss-feed)
-  (:title    "title")
-  (:subtitle "subtitle")
-  (:link     "link" "href")
-  (:ttl      "ttl")
-  (:date     "updated")
-  (:image    "logo")
-  (:items    "entry"))
-
-(defun rss-query-date (node locations encode-function)
-  "Lookup a date using possible locations."
-  (loop :for location :in locations
-        :for date := (rss-query-value node location :if-found encode-function)
+(defun rss-query-date (node locations encode)
+  "Attempts to get the date of an RSS feed/item. If none can be found then use the current time."
+  (loop :for loc :in locations
+        :for date := (rss-query (find-xml node loc) encode)
         :when date
         :return date
         :finally (return (get-universal-time))))
 
-(defun rss-parse (node)
-  "Returns an RSS feed from a channel."
+(defun rss-parse (channel)
+  "Parse the items of an RSS 2.0 channel."
   (make-instance 'rss-feed
-                 :title    (find-xml node "title"))
-                 :subtitle (find-xml node "description"))
-                 :link     (find-xml node "link"))
-                 :image    (find-xml node "image/url"))
-                 :ttl      (nth-value 1 (find-xml node "ttl"))rss-query-value node "ttl" :if-found #'parse-integer)
-                 :date     (rss-query-date node '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
-                 :items    (mapcar #'rss-parse-item (query-xml node "item"))))
+                 :title      (rss-query (find-xml channel "title"))
+                 :subtitle   (rss-query (find-xml channel "description"))
+                 :link       (rss-query (find-xml channel "link"))
+                 :ttl        (rss-query (find-xml channel "ttl") #'parse-integer)
+                 :image      (rss-query (find-xml channel "image/url"))
 
-(defun rss-parse-atom (node)
-  "Return an RSS feed from an atom feed."
+                 ;; use the build date or publish date
+                 :date       (rss-query-date channel '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
+
+                 ;; parse all the items in the channel
+                 :items      (mapcar #'rss-parse-item (query-xml channel "item"))))
+
+(defun rss-parse-item (item)
+  "Parse an individual items in an RSS 2.0 channel."
+  (make-instance 'rss-item
+                 :title      (rss-query (find-xml item "title"))
+                 :author     (rss-query (find-xml item "author"))
+                 :link       (rss-query (find-xml item "link"))
+                 :content    (rss-query (find-xml item "description"))
+                 :enclosure  (rss-query (find-xml item "enclosure") #'rss-parse-enclosure)
+
+                 ;; RSS 2.0 items only have a publish date
+                 :date       (rss-query-date item '("pubDate") #'encode-universal-rfc822-time)
+
+                 ;; for the unique identifier, use the link if no guid is present
+                 :guid       (rss-query (or (find-xml item "guid")
+                                            (find-xml item "link")))))
+
+(defun rss-parse-enclosure (node)
+  "Parse the attributes of an RSS item enclosure."
+  (list (rss-query (find-attribute node "url"))
+        (rss-query (find-attribute node "type"))))
+
+(defun rss-parse-atom (atom)
+  "Parse the items of an RSS 2.0 channel."
   (make-instance 'rss-feed
+                 :title      (rss-query (find-xml atom "title"))
+                 :subtitle   (rss-query (find-xml atom "subtitle"))
+                 :link       (rss-query (find-xml atom "link") #'rss-parse-atom-link)
+                 :ttl        (rss-query (find-xml atom "ttl") #'parse-integer)
 
-(defun rss-parse-item (node)
-  "Returns an RSS item from an atom feed."
-  (make-instance 'rss-item
-                 :title   (rss-query-value node "title")
-                 :author  (rss-query-value node "author")
-                 :link    (rss-query-value node "link")
-                 :guid    (rss-query-value node "guid")
-                 :content (rss-query-value node "description")
-                 :date    (rss-query-date node '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
-                 :image   (rss-query-value node "image/url")))
+                 ;; can have a logo or an icon
+                 :image      (or (rss-query (find-xml atom "logo"))
+                                 (rss-query (find-xml atom "icon")))
 
-(defun rss-parse-atom-entry (node)
-  "Returns an RSS item from an atom feed."
+                 ;; use the build date or publish date
+                 :date       (rss-query-date atom '("updated" "published") #'encode-universal-rfc3339-time)
+
+                 ;; parse all the entries in the feed
+                 :items      (mapcar #'rss-parse-atom-entry (query-xml atom "entry"))))
+
+(defun rss-parse-atom-entry (entry)
+  "Returns an RSS item from an ATOM feed."
   (make-instance 'rss-item
-                 :title   (rss-query-value node "title")
-                 :author  (rss-query-value node "author")
-                 :link    (rss-query-attribute node "link" "href")
-                 :content (rss-query-value node "content")
-                 :guid    (rss-query-value node "id")
-                 :date    (rss-query-date node '("updated" "published") #'encode-universal-rfc3339-time)
-                 :image   (or (rss-query-value node "logo")
-                              (rss-query-value node "icon"))))
+                 :title      (rss-query (find-xml entry "title"))
+                 :author     (rss-query (find-xml entry "author"))
+                 :content    (rss-query (find-xml entry "content"))
+                 :link       (rss-query (find-xml entry "link") #'rss-parse-atom-link)
+
+                 ;; use the unique id if present, otherwise the entry link
+                 :guid       (or (rss-query (find-xml entry "id"))
+                                 (rss-query (find-xml entry "link") #'rss-parse-atom-link))
+
+                 ;; use the last update or the original publish date of the entry
+                 :date       (rss-query-date entry '("updated" "published") #'encode-universal-rfc3339-time)))
+
+(defun rss-parse-atom-link (node)
+  "Links in ATOM are in an HREF attribute."
+  (when-let (href (find-attribute node "href"))
+    (node-value href)))
