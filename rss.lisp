@@ -90,7 +90,7 @@
 (defun rss-content-find (item type)
   "Returns a list of rss-content objects matching a particular type in an rss-item."
   (flet ((match-content-p (content)
-           (zerop (search type (rss-content-type content) :test #'string=))))
+           (eql (search type (rss-content-type content) :test #'string=) 0)))
     (remove-if-not #'match-content-p (rss-content item))))
 
 (defun rss-query (node &optional if-found)
