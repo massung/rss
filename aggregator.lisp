@@ -104,7 +104,10 @@
 
                          ;; notify of a new headline
                          (when callback
-                           (funcall callback aggregator headline)))))))
+                           (funcall callback aggregator headline))))
+
+                     ;; wait a bit so the cpu isn't hogged by lots of incoming headlines
+                     (current-process-pause 0.1))))
 
       ;; start the aggregation process
       (unless process
