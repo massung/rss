@@ -31,7 +31,8 @@
    #:rss-aggregator-feeds
 
    ;; headline reader functions
-   #:rss-headline-source
+   #:rss-headline-source-url
+   #:rss-headline-source-title
    #:rss-headline-item))
 
 (in-package :rss-aggregator)
@@ -83,6 +84,15 @@
         headline
       (format stream "~s via ~s" (rss-title item) source))))
 
+(defmethod rss-headline-source-url ((headline rss-headline))
+  "Returns the URL of the source for this headline."
+  (rss-feed-reader-url (rss-headline-source headline)))
+
+(defmethod rss-headline-source-title ((headline rss-headline))
+  "Returns the custom - or feed/url - title of the source of a headline."
+  (or (rss-feed-reader-title (rss-headline-source headline))
+      (process-name (rss-feed-reader-process (rss-headline-source headline)))))
+
 (defmethod initialize-instance :after ((aggregator rss-aggregator) &key)
   "Immediately create the mailbox so feed readers can send stuff to it."
   (with-slots (mailbox)
@@ -95,16 +105,20 @@
       aggregator
     (labels ((headline-guid (h)
                (rss-guid (rss-headline-item h)))
+             (headline-exists-p (h)
+               (find (headline-guid h) headlines :key #'headline-guid :test #'string=))
+             (headline-read ()
+               (unless (mailbox-empty-p mailbox)
+                 (mailbox-read mailbox)))
 
              ;; the aggregation process
              (aggregate ()
-               (loop (let ((headline (mailbox-read mailbox)))
-                       (unless (find (headline-guid headline) headlines :key #'headline-guid :test #'string=)
-                         (sys:atomic-push headline headlines)
-
-                         ;; notify of a new headline
-                         (when callback
-                           (funcall callback aggregator headline))))
+               (loop (when-let (new (loop :for h :in (loop :for h := (headline-read) :while h :collect h)
+                                          :unless (headline-exists-p h)
+                                          :do (sys:atomic-push h headlines)
+                                          :collect h))
+                       (when callback
+                         (funcall callback aggregator new)))
 
                      ;; wait a bit so the cpu isn't hogged by lots of incoming headlines
                      (current-process-pause 0.1))))
@@ -159,33 +173,35 @@
         (when (rss-aggregate-feed feed mailbox)
           (prog1 t (push feed feeds)))))))
 
-(defmethod rss-aggregate-feed ((feed rss-feed-reader) mailbox)
+(defmethod rss-aggregate-feed ((source rss-feed-reader) mailbox)
   "Starts the feed reader process that will send headlines to a mailbox."
   (with-slots (url title process)
-      feed
+      source
     (flet ((reader ()
              (loop (handler-case
                        (when-let (feed (rss-get url))
                          
                          ;; rename the process to that of the feed or url
-                         (let ((source (or title (rss-title feed) (format-url url))))
-                           (setf (process-name *current-process*) source)
+                         (setf (process-name *current-process*) (or title (rss-title feed) (format-url url)))
                              
-                           ;; send all the headlines to the aggregator
-                           (loop :for item :in (rss-items feed)
-                                 :for headline := (make-instance 'rss-headline :source source :item item)
-                                 :do (mailbox-send mailbox headline)
-                                 :finally (current-process-pause (* (or (rss-ttl feed) 5) 60)))))
+                         ;; send all the headlines to the aggregator
+                         (loop :for item :in (rss-items feed)
+                               :for headline := (make-instance 'rss-headline :source source :item item)
+                               :do (mailbox-send mailbox headline)
+                               :finally (current-process-pause (* (or (rss-ttl feed) 5) 60))))
 
                      ;; if something bad happened, just wait and try again
                      (error (c)
                        (current-process-pause 300))))))
           
       ;; start the feed process only if the feed isn't currently in the feed list
-      (setf (rss-feed-reader-process feed) (process-run-function (format-url url) '() #'reader)))))
+      (setf process (process-run-function (format-url url) '() #'reader)))))
 
-(defmethod rss-aggregator-headlines ((aggregator rss-aggregator))
+(defmethod rss-aggregator-headlines ((aggregator rss-aggregator) &key (count 100))
   "Get a sorted list of headlines from the aggregator."
   (with-slots (headlines)
       aggregator
-    (sort headlines #'> :key #'(lambda (h) (rss-date (rss-headline-item h))))))
+    (loop :for n :below count
+          :for headline :in (sort headlines #'> :key #'(lambda (h) (rss-date (rss-headline-item h))))
+          :collect headline :into aggregated-headlines
+          :finally (return aggregated-headlines))))
