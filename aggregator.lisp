@@ -31,8 +31,7 @@
    #:rss-aggregator-feeds
 
    ;; headline reader functions
-   #:rss-headline-source-url
-   #:rss-headline-source-title
+   #:rss-headline-feed
    #:rss-headline-item))
 
 (in-package :rss-aggregator)
@@ -55,9 +54,9 @@
   (:documentation "Maps a URL to a process that sends headlines to an aggregator."))
 
 (defclass rss-headline ()
-  ((source :initarg :source :reader rss-headline-source :initform nil)
-   (item   :initarg :item   :reader rss-headline-item   :initform nil))
-  (:documentation "Tracks an rss-item to its source."))
+  ((feed :initarg :feed :reader rss-headline-feed :initform nil)
+   (item :initarg :item :reader rss-headline-item :initform nil))
+  (:documentation "Tracks an rss-item to its feed."))
 
 (defmethod print-object ((aggregator rss-aggregator) stream)
   "Output an aggregator to a stream."
@@ -73,25 +72,16 @@
 (defmethod print-object ((feed rss-feed-reader) stream)
   "Output a feed reader to a stream."
   (print-unreadable-object (feed stream :type t)
-    (with-slots (title process)
+    (with-slots (process)
         feed
-      (format stream "~s" (or title (process-name process))))))
+      (format stream "~s" (process-name process)))))
 
 (defmethod print-object ((headline rss-headline) stream)
   "Output a headline to a stream."
   (print-unreadable-object (headline stream :type t)
-    (with-slots (source item)
+    (with-slots (feed item)
         headline
-      (format stream "~s via ~s" (rss-title item) source))))
-
-(defmethod rss-headline-source-url ((headline rss-headline))
-  "Returns the URL of the source for this headline."
-  (rss-feed-reader-url (rss-headline-source headline)))
-
-(defmethod rss-headline-source-title ((headline rss-headline))
-  "Returns the custom - or feed/url - title of the source of a headline."
-  (or (rss-feed-reader-title (rss-headline-source headline))
-      (process-name (rss-feed-reader-process (rss-headline-source headline)))))
+      (format stream "~s via ~s" (rss-title item) (rss-title feed)))))
 
 (defmethod initialize-instance :after ((aggregator rss-aggregator) &key)
   "Immediately create the mailbox so feed readers can send stuff to it."
@@ -107,19 +97,19 @@
                (rss-guid (rss-headline-item h)))
              (headline-exists-p (h)
                (find (headline-guid h) headlines :key #'headline-guid :test #'string=))
-             (headline-read ()
-               (unless (mailbox-empty-p mailbox)
-                 (mailbox-read mailbox)))
 
              ;; the aggregation process
              (aggregate ()
-               (loop (when-let (new (loop :for h :in (loop :for h := (headline-read) :while h :collect h)
-                                          :unless (headline-exists-p h)
-                                          :do (sys:atomic-push h headlines)
-                                          :collect h))
+               (loop (when-let (new (loop :for headline := (mailbox-wait-for-event mailbox :no-hang-p t)
+                                          :while headline
+                                          :unless (headline-exists-p headline)
+                                          :collect headline))
+                       (sys:atomic-exchange headlines (append new headlines))
+                         
+                       ;; notify other threads that a new headline is ready
                        (when callback
                          (funcall callback aggregator new)))
-
+                       
                      ;; wait a bit so the cpu isn't hogged by lots of incoming headlines
                      (current-process-pause 0.1))))
 
@@ -186,7 +176,7 @@
                              
                          ;; send all the headlines to the aggregator
                          (loop :for item :in (rss-items feed)
-                               :for headline := (make-instance 'rss-headline :source source :item item)
+                               :for headline := (make-instance 'rss-headline :feed feed :item item)
                                :do (mailbox-send mailbox headline)
                                :finally (current-process-pause (* (or (rss-ttl feed) 5) 60))))
 

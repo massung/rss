@@ -28,6 +28,7 @@
    #:rss-link
    #:rss-content
    #:rss-content-type
+   #:rss-content-summary
    #:rss-content-link
    #:rss-content-find
    #:rss-author
@@ -35,6 +36,7 @@
    #:rss-ttl
    #:rss-guid
    #:rss-image
+   #:rss-icon
    #:rss-items))
 
 (in-package :rss)
@@ -46,6 +48,7 @@
    (date      :initarg :date      :reader rss-date)
    (ttl       :initarg :ttl       :reader rss-ttl)
    (image     :initarg :image     :reader rss-image)
+   (icon      :initarg :icon      :reader rss-icon)
    (items     :initarg :items     :reader rss-items))
   (:documentation "RSS atom feed or channel."))
 
@@ -61,6 +64,7 @@
 
 (defclass rss-content ()
   ((type      :initarg :type      :reader rss-content-type)
+   (summary   :initarg :summary   :reader rss-content-summary)
    (link      :initarg :link      :reader rss-content-link))
   (:documentation "RSS item content data."))
 
@@ -76,7 +80,7 @@
 
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
-  (with-response (resp (http-follow (http-get url) :limit redirect-limit))
+  (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
     (when-let (doc (parse-xml (response-body resp) url))
 
       ;; check for an ATOM feed
@@ -93,22 +97,21 @@
            (eql (search type (rss-content-type content) :test #'string=) 0)))
     (remove-if-not #'match-content-p (rss-content item))))
 
-(defun rss-query (node &optional if-found)
+(defun rss-query (node &optional (if-found #'node-value))
   "Apply an XML node through a chain of functions until NIL or the final result."
-  (handler-case
-      (when-let (value (and node (node-value node)))
-        (if (null if-found)
-            value
-          (funcall if-found value)))
-    (error (c) nil)))
+  (and node (funcall if-found node)))
+
+(defun rss-query-value (node &optional (if-found #'identity))
+  "Apply a function to a node value if the node exists."
+  (and node (funcall if-found (node-value node))))
 
 (defun rss-query-date (node locations encode)
   "Attempts to get the date of an RSS feed/item. If none can be found then use the current time."
-  (loop :for loc :in locations
-        :for date := (rss-query (find-xml node loc) encode)
-        :when date
-        :return date
-        :finally (return (get-universal-time))))
+  (or (loop :for loc :in locations
+            :for date := (rss-query-value (find-xml node loc) encode)
+            :when date
+            :return date)
+      (get-universal-time)))
 
 (defun rss-parse (channel)
   "Parse the items of an RSS 2.0 channel."
@@ -116,8 +119,14 @@
                  :title      (rss-query (find-xml channel "title"))
                  :subtitle   (rss-query (find-xml channel "description"))
                  :link       (rss-query (find-xml channel "link"))
-                 :ttl        (rss-query (find-xml channel "ttl") #'parse-integer)
                  :image      (rss-query (find-xml channel "image/url"))
+
+                 ;; time to live (number of minutes between updates)
+                 :ttl        (rss-query-value (find-xml channel "ttl") #'parse-integer)
+
+                 ;; rss channels don't support icons, so try a favicon
+                 :icon       (when-let (link (rss-query (find-xml channel "link")))
+                               (with-url (url link :path "/favicon.ico") url))
 
                  ;; use the build date or publish date
                  :date       (rss-query-date channel '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
@@ -155,11 +164,13 @@
                  :title      (rss-query (find-xml atom "title"))
                  :subtitle   (rss-query (find-xml atom "subtitle"))
                  :link       (rss-query (find-xml atom "link") #'rss-parse-atom-link)
+
+                 ;; time to live (minutes between updates)
                  :ttl        (rss-query (find-xml atom "ttl") #'parse-integer)
 
-                 ;; can have a logo or an icon
-                 :image      (or (rss-query (find-xml atom "logo"))
-                                 (rss-query (find-xml atom "icon")))
+                 ;; can have a logo and icon
+                 :image      (rss-query (find-xml atom "logo"))
+                 :icon       (rss-query (find-xml atom "icon"))
 
                  ;; use the build date or publish date
                  :date       (rss-query-date atom '("updated" "published") #'encode-universal-rfc3339-time)
@@ -172,11 +183,11 @@
   (make-instance 'rss-item
                  :title      (rss-query (find-xml entry "title"))
                  :author     (rss-query (find-xml entry "author"))
-                 :link       (rss-query (find-xml entry "link") #'rss-parse-atom-link)
                  :summary    (rss-query (find-xml entry "summary"))
+                 :link       (rss-query (find-xml entry "link") #'rss-parse-atom-link)
 
                  ;; look for multimedia content
-                 :content    (mapcan #'rss-parse-atom-content (rss-query (query-xml entry "content")))
+                 :content    (mapcar #'rss-parse-atom-content (query-xml entry "content"))
 
                  ;; use the unique id if present, otherwise the entry link
                  :guid       (or (rss-query (find-xml entry "id"))
@@ -193,5 +204,6 @@
 (defun rss-parse-atom-content (node)
   "Parse the attributes of an ATOM content tag."
   (make-instance 'rss-content
+                 :summary (node-value node)
                  :link (rss-query (find-attribute node "src"))
                  :type (rss-query (find-attribute node "type"))))
