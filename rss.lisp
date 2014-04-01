@@ -22,44 +22,53 @@
   (:export
    #:rss-get
    #:rss-parse
-   #:rss-title
-   #:rss-subtitle
-   #:rss-summary
-   #:rss-link
-   #:rss-content
+
+   ;; rss-feed readers
+   #:rss-feed-title
+   #:rss-feed-subtitle
+   #:rss-feed-link
+   #:rss-feed-date
+   #:rss-feed-ttl
+   #:rss-feed-image
+   #:rss-feed-icon
+   #:rss-feed-items
+
+   ;; rss-item readers
+   #:rss-item-title
+   #:rss-item-author
+   #:rss-item-link
+   #:rss-item-guid
+   #:rss-item-summary
+   #:rss-item-content
+   #:rss-item-date
+
+   ;; rss-content readers
+   #:rss-content-find
    #:rss-content-type
    #:rss-content-summary
-   #:rss-content-link
-   #:rss-content-find
-   #:rss-author
-   #:rss-date
-   #:rss-ttl
-   #:rss-guid
-   #:rss-image
-   #:rss-icon
-   #:rss-items))
+   #:rss-content-link))
 
 (in-package :rss)
 
 (defclass rss-feed ()
-  ((title     :initarg :title     :reader rss-title)
-   (subtitle  :initarg :subtitle  :reader rss-subtitle)
-   (link      :initarg :link      :reader rss-link)
-   (date      :initarg :date      :reader rss-date)
-   (ttl       :initarg :ttl       :reader rss-ttl)
-   (image     :initarg :image     :reader rss-image)
-   (icon      :initarg :icon      :reader rss-icon)
-   (items     :initarg :items     :reader rss-items))
+  ((title     :initarg :title     :reader rss-feed-title)
+   (subtitle  :initarg :subtitle  :reader rss-feed-subtitle)
+   (link      :initarg :link      :reader rss-feed-link)
+   (date      :initarg :date      :reader rss-feed-date)
+   (ttl       :initarg :ttl       :reader rss-feed-ttl)
+   (image     :initarg :image     :reader rss-feed-image)
+   (icon      :initarg :icon      :reader rss-feed-icon)
+   (items     :initarg :items     :reader rss-feed-items))
   (:documentation "RSS atom feed or channel."))
 
 (defclass rss-item ()
-  ((title     :initarg :title     :reader rss-title)
-   (link      :initarg :link      :reader rss-link)
-   (summary   :initarg :summary   :reader rss-summary)
-   (content   :initarg :content   :reader rss-content)
-   (date      :initarg :date      :reader rss-date)
-   (author    :initarg :author    :reader rss-author)
-   (guid      :initarg :guid      :reader rss-guid))
+  ((title     :initarg :title     :reader rss-item-title)
+   (link      :initarg :link      :reader rss-item-link)
+   (summary   :initarg :summary   :reader rss-item-summary)
+   (content   :initarg :content   :reader rss-item-content)
+   (date      :initarg :date      :reader rss-item-date)
+   (author    :initarg :author    :reader rss-item-author)
+   (guid      :initarg :guid      :reader rss-item-guid))
   (:documentation "RSS atom entry or channel item."))
 
 (defclass rss-content ()
@@ -71,12 +80,12 @@
 (defmethod print-object ((feed rss-feed) s)
   "Output an RSS feed object to a stream."
   (print-unreadable-object (feed s :type t)
-    (format s "~s (~a items)" (rss-title feed) (length (rss-items feed)))))
+    (format s "~s (~a items)" (rss-feed-title feed) (length (rss-feed-items feed)))))
 
 (defmethod print-object ((item rss-item) s)
   "Output an RSS item object to a stream."
   (print-unreadable-object (item s :type t)
-    (format s "~s" (rss-title item))))
+    (format s "~s" (rss-item-title item))))
 
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
@@ -95,7 +104,7 @@
   "Returns a list of rss-content objects matching a particular type in an rss-item."
   (flet ((match-content-p (content)
            (eql (search type (rss-content-type content) :test #'string=) 0)))
-    (remove-if-not #'match-content-p (rss-content item))))
+    (remove-if-not #'match-content-p (rss-item-content item))))
 
 (defun rss-query (node &optional (if-found #'node-value))
   "Apply an XML node through a chain of functions until NIL or the final result."

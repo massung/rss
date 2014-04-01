@@ -81,7 +81,7 @@
   (print-unreadable-object (headline stream :type t)
     (with-slots (feed item)
         headline
-      (format stream "~s via ~s" (rss-title item) (rss-title feed)))))
+      (format stream "~s via ~s" (rss-item-title item) (rss-feed-title feed)))))
 
 (defmethod initialize-instance :after ((aggregator rss-aggregator) &key)
   "Immediately create the mailbox so feed readers can send stuff to it."
@@ -94,7 +94,7 @@
   (with-slots (name mailbox process headlines callback)
       aggregator
     (labels ((headline-guid (h)
-               (rss-guid (rss-headline-item h)))
+               (rss-item-guid (rss-headline-item h)))
              (headline-exists-p (h)
                (find (headline-guid h) headlines :key #'headline-guid :test #'string=))
 
@@ -172,13 +172,13 @@
                        (when-let (feed (rss-get url))
                          
                          ;; rename the process to that of the feed or url
-                         (setf (process-name *current-process*) (or title (rss-title feed) (format-url url)))
+                         (setf (process-name *current-process*) (or title (rss-feed-title feed) (format-url url)))
                              
                          ;; send all the headlines to the aggregator
-                         (loop :for item :in (rss-items feed)
+                         (loop :for item :in (rss-feed-items feed)
                                :for headline := (make-instance 'rss-headline :feed feed :item item)
                                :do (mailbox-send mailbox headline)
-                               :finally (current-process-pause (* (or (rss-ttl feed) 5) 60))))
+                               :finally (current-process-pause (* (or (rss-feed-ttl feed) 5) 60))))
 
                      ;; if something bad happened, just wait and try again
                      (error (c)
@@ -192,6 +192,6 @@
   (with-slots (headlines)
       aggregator
     (loop :for n :below count
-          :for headline :in (sort headlines #'> :key #'(lambda (h) (rss-date (rss-headline-item h))))
+          :for headline :in (sort headlines #'> :key #'(lambda (h) (rss-item-date (rss-headline-item h))))
           :collect headline :into aggregated-headlines
           :finally (return aggregated-headlines))))
