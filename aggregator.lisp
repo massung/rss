@@ -50,7 +50,8 @@
 (defclass rss-feed-reader ()
   ((title   :initarg :title   :accessor rss-feed-reader-title   :initform nil)
    (url     :initarg :url     :accessor rss-feed-reader-url     :initform nil)
-   (process :initarg :process :accessor rss-feed-reader-process :initform nil))
+   (process :initarg :process :accessor rss-feed-reader-process :initform nil)
+   (feed    :initarg :feed    :accessor rss-feed-reader-feed    :initform nil))
   (:documentation "Maps a URL to a process that sends headlines to an aggregator."))
 
 (defclass rss-headline ()
@@ -108,7 +109,7 @@
                          
                        ;; notify other threads that a new headline is ready
                        (when callback
-                         (funcall callback aggregator new)))
+                         (funcall callback new)))
                        
                      ;; wait a bit so the cpu isn't hogged by lots of incoming headlines
                      (current-process-pause 0.1))))
@@ -154,7 +155,7 @@
     ;; loop over all the feeds and restart their processes
     (loop :for feed :in feeds :do (rss-aggregate-feed feed mailbox))))
 
-(defmethod rss-aggregate ((aggregator rss-aggregator) url &optional title)
+(defmethod rss-aggregate ((aggregator rss-aggregator) url &key title)
   "Create a new feed process that will continuously push headlines to the aggregator."
   (with-slots (mailbox feeds)
       aggregator
@@ -165,11 +166,11 @@
 
 (defmethod rss-aggregate-feed ((source rss-feed-reader) mailbox)
   "Starts the feed reader process that will send headlines to a mailbox."
-  (with-slots (url title process)
+  (with-slots (url title process feed)
       source
     (flet ((reader ()
              (loop (handler-case
-                       (when-let (feed (rss-get url))
+                       (when (setf feed (rss-get url))
                          
                          ;; rename the process to that of the feed or url
                          (setf (process-name *current-process*) (or title (rss-feed-title feed) (format-url url)))
