@@ -91,14 +91,7 @@
   "Fetch a feed from a URL and parse it."
   (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
     (when-let (doc (parse-xml (response-body resp) url))
-
-      ;; check for an ATOM feed
-      (when-let (atom (find-xml doc "/feed"))
-        (return-from rss-get (rss-parse-atom atom)))
-
-      ;; check for an RSS 2.0 channel
-      (when-let (channel (find-xml doc "/rss/channel"))
-        (return-from rss-get (rss-parse channel))))))
+      (rss-parse doc))))
 
 (defun rss-content-find (item type)
   "Returns a list of rss-content objects matching a particular type in an rss-item."
@@ -122,7 +115,16 @@
             :return date)
       (get-universal-time)))
 
-(defun rss-parse (channel)
+(defun rss-parse (doc)
+  "Parse an XML document as an RSS feed or ATOM."
+  (when-let (atom (find-xml doc "/feed"))
+    (return-from rss-parse (rss-parse-atom atom)))
+
+  ;; check for an RSS 2.0 channel
+  (when-let (channel (find-xml doc "/rss/channel"))
+    (return-from rss-parse (rss-parse-channel channel))))
+
+(defun rss-parse-channel (channel)
   "Parse the items of an RSS 2.0 channel."
   (make-instance 'rss-feed
                  :title      (rss-query (find-xml channel "title"))
