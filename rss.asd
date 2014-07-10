@@ -10,5 +10,7 @@
   :license "Apache 2.0"
   :description "RSS feed parser and aggregator for LispWorks."
   :serial t
-  :components ((:file "rss") (:file "aggregator"))
-  :depends-on ("http" "xml" "rfc-date"))
+  :components ((:file "rss")
+               (:file "rss-utils")
+               (:file "aggregator"))
+  :depends-on ("http" "html" "xml" "rfc-date"))

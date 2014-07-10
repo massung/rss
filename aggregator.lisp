@@ -32,7 +32,12 @@
 
    ;; headline reader functions
    #:rss-headline-feed
-   #:rss-headline-item))
+   #:rss-headline-item
+
+   ;; aggregated feed reader functions
+   #:rss-feed-reader-title
+   #:rss-feed-reader-url
+   #:rss-feed-reader-feed))
 
 (in-package :rss-aggregator)
 
@@ -41,17 +46,17 @@
    (callback  :initarg :headline-callback :reader rss-aggregator-callback :initform nil)
 
    ;; internal members
-   (feeds     :initform nil)
+   (feeds     :initform nil               :reader rss-aggregator-feeds)
    (process   :initform nil)
    (mailbox   :initform nil)
    (headlines :initform nil))
   (:documentation "A collector of news headlines from feed processes."))
 
 (defclass rss-feed-reader ()
-  ((title   :initarg :title   :accessor rss-feed-reader-title   :initform nil)
-   (url     :initarg :url     :accessor rss-feed-reader-url     :initform nil)
-   (process :initarg :process :accessor rss-feed-reader-process :initform nil)
-   (feed    :initarg :feed    :accessor rss-feed-reader-feed    :initform nil))
+  ((title   :initarg :title   :reader rss-feed-reader-title   :initform nil)
+   (url     :initarg :url     :reader rss-feed-reader-url     :initform nil)
+   (process :initarg :process :reader rss-feed-reader-process :initform nil)
+   (feed    :initarg :feed    :reader rss-feed-reader-feed    :initform nil))
   (:documentation "Maps a URL to a process that sends headlines to an aggregator."))
 
 (defclass rss-headline ()
