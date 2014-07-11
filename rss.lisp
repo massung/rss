@@ -193,7 +193,7 @@
   "Returns an RSS item from an ATOM feed."
   (make-instance 'rss-item
                  :title      (rss-query (find-xml entry "title"))
-                 :author     (rss-query (find-xml entry "author"))
+                 :author     (rss-query (find-xml entry "author/name"))
                  :summary    (rss-query (find-xml entry "summary"))
                  :link       (rss-query (find-xml entry "link") #'rss-parse-atom-link)
 

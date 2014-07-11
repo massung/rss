@@ -88,12 +88,9 @@
 
 (defun rss-source-info (item &optional feed)
   "Age, author, and site of an item."
-  (let ((source (or (rss-item-author item) (when feed
-                                             (or (rss-feed-title feed)
-                                                 (when-let (link (rss-feed-link feed))
-                                                   (http:with-url (url link)
-                                                     (http:url-domain url))))))))
-    (format nil "~:[posted ~;by ~:*~a ~]~a" source (rss-date-string item))))
+  (let ((author (rss-item-author item))
+        (source (and feed (rss-feed-title feed))))
+    (format nil "~:[Posted~;~:*~a~] ~a" (or author source) (rss-date-string item))))
           
 (defun rss-favicon-url (feed)
   "Get the favicon URL for a given feed."
