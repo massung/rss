@@ -55,7 +55,8 @@ Let's see what's been aggregated so far...
 
 	CL-USER > (rss-aggregator-headlines agg)
 	(#<RSS::RSS-HEADLINE "A Damaging Distance" via "Digg Top Stories">
-	 #<RSS::RSS-HEADLINE "Firefall officially heats things up on July 29" via "Joystiq RSS Feed">...)
+	 #<RSS::RSS-HEADLINE "Firefall officially heats things up on July 29" via "Joystiq RSS Feed">
+	 ...)
 
 The `rss-aggregator-headlines` method returns the headlines in sorted order. It also takes an optional argument, which is the universal time - before which - headlines will not be returned:
 
@@ -68,7 +69,7 @@ To stop aggregating and kill all processes, simply call `rss-aggregator-stop`. A
 	(rss-aggregator-stop aggregator)
 	(rss-aggregator-start aggregator)
 	
-*Note: If you stop the aggregator, calling the start method will simply just restart the aggregation process and not the individual feed processes. You'll need to start those again by calling 
+*Note: If you stop the aggregator, calling the start method will simply just restart the aggregation process and not the individual feed processes. You'll need to start those again by using `rss-aggregator-feeds`.*
 
 To clear all headlines, call `rss-aggregator-clear`.
 
