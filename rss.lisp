@@ -22,6 +22,7 @@
   (:export
    #:rss-get
    #:rss-parse
+   #:rss-aggregator
 
    ;; rss-feed readers
    #:rss-feed-title
@@ -46,7 +47,19 @@
    #:rss-content-find
    #:rss-content-type
    #:rss-content-summary
-   #:rss-content-link))
+   #:rss-content-link
+   
+   ;; rss-aggregator methods
+   #:rss-aggregator-start
+   #:rss-aggregator-stop
+   #:rss-aggregator-clear
+   #:rss-aggregator-reset
+   #:rss-aggregator-headlines
+   #:rss-aggregator-feeds
+
+   ;; headline aggregation readers
+   #:rss-headline-feed
+   #:rss-headline-item))
 
 (in-package :rss)
 

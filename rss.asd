@@ -11,6 +11,5 @@
   :description "RSS feed parser and aggregator for LispWorks."
   :serial t
   :components ((:file "rss")
-               (:file "rss-utils")
                (:file "aggregator"))
   :depends-on ("http" "html" "xml" "rfc-date"))

@@ -1,39 +1,97 @@
-# RSS Parser for LispWorks
+# RSS Parser and Aggregator for LispWorks
 
-A simple RSS package for [LispWorks](http://www.lispworks.com) that uses the [XML](http://github.com/massung/xml), [HTTP](http://github.com/massung/http), and [date](http://github.com/massung/date) packages to parse RSS feeds.
+A simple RSS package for [LispWorks](http://www.lispworks.com) that uses the [XML](http://github.com/massung/xml), [HTTP](http://github.com/massung/http), and [date](http://github.com/massung/date) packages to parse RSS feeds and aggregate headlines.
 
 ## Quickstart
 
 Simply call the `rss-get` function with a URL to download and parse the feed.
 
 	CL-USER > (rss-get "http://www.npr.org/rss/rss.php?id=1001")
-	#<RSS::RSS-FEED "News">
+	#<RSS::RSS-FEED "News" (15 items)>
 
-The `rss-feed` and `rss-item` classes both derive from the same base-class: `rss-node`, which houses the `xml-node` for that element in the RSS. The base method `rss-query` can be used to extract information from an `rss-node`:
+The `rss-feed` class has the following reader methods:
 
-	(rss-query node element &key (if-found #'identity) if-not-found)
+	(rss-feed-title feed)    ;=> string
+	(rss-feed-subtitle feed) ;=> string
+	(rss-feed-link feed)     ;=> url
+	(rss-feed-date feed)     ;=> univeral time
+	(rss-feed-ttl feed)      ;=> time-to-live minutes
+	(rss-feed-image feed)    ;=> url
+	(rss-feed-icon feed)     ;=> url
+	(rss-feed-items feed)    ;=> list of rss-item
 	
-The optional `if-found` argument is a function that will be applied to the `node-value` of the element (if found) before returning it. The `if-not-found` will be returned if the element doesn't exist in the node.
+The `rss-item` class has these reader methods:
 
-	CL-USER > (rss-query * "title" :if-found #'string-upcase)
-	"NEWS"
-
-A plethora of common query functions exist to assist you:
-
-	(rss-title node)        ;=> string
-	(rss-link node)         ;=> url
-	(rss-description node)  ;=> string
-	(rss-image node)        ;=> url
-	(rss-categories node)   ;=> list
-	(rss-content node)      ;=> string
-	(rss-date node)         ;=> universal-time
-
-Some functions only are exposed on an `rss-feed` object:
-
-	(rss-items feed)        ;=> list
-	(rss-ttl feed)          ;=> integer
+	(rss-item-title item)    ;=> string
+	(rss-item-summary item)  ;=> string
+	(rss-item-link item)     ;=> url
+	(rss-item-content item)  ;=> list of rss-content
+	(rss-item-date item)     ;=> univeral time
+	(rss-item-author item)   ;=> string
+	(rss-item-guid item)     ;=> string
 	
-And some for the `rss-item` class:
+Each item can have various content types embedded within it. You can use the `rss-content-find` function to search an `rss-item` for a given type of content.
 
-	(rss-guid item)         ;=> string
+	(rss-content-find item type)
 
+The `rss-content` class has the following reader methods:
+
+	(rss-content-type content)    ;=> string
+	(rss-content-summary content) ;=> string
+	(rss-content-link content)    ;=> url
+
+## Aggregating RSS Feeds
+
+The `rss` package also comes with a feed aggregator. This is a class that will continuously fetch a list of feeds and aggregate the headlines they return.
+
+First, create an aggregator, passing in an optional list of feeds to aggregate.
+
+	CL-USER > (setf agg (make-instance 'rss-aggregator :feed-urls (list "digg.com/rss/top.rss" "www.joystiq.com/rss.xml")))
+	#<RSS-AGGREGATOR 200CBE2F>
+	
+At this point, if you pull up the LispWorks process list, you will see there is a process running called "RSS Aggregator" and two other processes, which are the feed reader processes matching the URLs.
+
+Let's see what's been aggregated so far...
+
+	CL-USER > (rss-aggregator-headlines agg)
+	(#<RSS::RSS-HEADLINE "A Damaging Distance" via "Digg Top Stories">
+	 #<RSS::RSS-HEADLINE "Firefall officially heats things up on July 29" via "Joystiq RSS Feed">...)
+
+The `rss-aggregator-headlines` method returns the headlines in sorted order. It also takes an optional argument, which is the universal time - before which - headlines will not be returned:
+
+	(rss-aggregator-headlines aggregator &optional since)
+	
+By default, `since` is 0 (all headlines will be returned).
+
+To stop aggregating and kill all processes, simply call `rss-aggregator-stop`. And to start the aggregator process again, simply call `rss-aggregator-start`.
+
+	(rss-aggregator-stop aggregator)
+	(rss-aggregator-start aggregator)
+	
+*Note: If you stop the aggregator, calling the start method will simply just restart the aggregation process and not the individual feed processes. You'll need to start those again by calling 
+
+To clear all headlines, call `rss-aggregator-clear`.
+
+	(rss-aggregator-clear aggregator &optional before)
+	
+The `before` argument defaults to the current, universal time, and is the time which, any headlines before that are removed from the aggregator.
+
+If you need to stop, clear, start, and begin aggregating the same RSS feeds again, use `rss-aggregator-reset`.
+
+	(rss-aggregator-reset aggregator)
+	
+Finally, to get a list of all the feed URLs being aggregated, simply call `rss-aggregator-feeds`.
+
+	CL-USER > (rss-aggregator-feeds agg)
+	("http://www.joystiq.com/rss.xml"
+	 "http://digg.com/rss/top.rss")
+
+This method is also `setf`-able, and will handle terminating any readers that are not in the list and start aggregating feeds that are new.
+
+	CL-USER > (setf (rss-aggregator-feeds agg) (list "www.npr.org/rss/rss.php?id=1004"))
+	NIL
+
+	CL-USER > (rss-aggregator-feeds agg)
+	("http://www.npr.org/rss/rss.php?id=1004")
+
+*Note: changing the reader list doesn't clear the headlines of any feeds you no longer wish to aggregate. So, clear the headlines first if you would like to start fresh.*
