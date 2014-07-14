@@ -151,7 +151,8 @@
 
                  ;; rss channels don't support icons, so try a favicon
                  :icon       (when-let (link (rss-query (find-xml channel "link")))
-                               (with-url (url link :path "/favicon.ico") url))
+                               (with-url (url link :path "/favicon.ico")
+                                 (format-url url)))
 
                  ;; use the build date or publish date
                  :date       (rss-query-date channel '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
