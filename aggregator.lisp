@@ -23,7 +23,11 @@
   ((process   :initform nil)
    (feeds     :initform nil)
    (headlines :initform nil)
-   (mailbox   :initform nil))
+   (mailbox   :initform nil)
+
+   ;; notification condition lock
+   (condition :initform (mp:make-condition-variable))
+   (lock      :initform (mp:make-lock)))
   (:extra-initargs '(:feed-urls))
   (:documentation "A collection of news headlines and feed processes."))
 
@@ -48,7 +52,7 @@
 
 (defmethod rss-aggregator-start ((agg rss-aggregator))
   "Create the aggregator process."
-  (with-slots (process headlines mailbox)
+  (with-slots (process headlines mailbox condition lock)
       agg
 
     ;; stop the aggregator if it's running
@@ -67,7 +71,11 @@
                (loop (if-let (headline (mp:mailbox-wait-for-event mailbox))
                          (let ((guid (rss-item-guid (rss-headline-item headline))))
                            (unless (headline-exists-p guid)
-                             (sys:atomic-push headline headlines)))
+                             (sys:atomic-push headline headlines))
+
+                           ;; inform all threads waiting on new headlines that one is available
+                           (mp:with-lock (lock)
+                             (mp:condition-variable-broadcast condition)))
                        (mp:current-process-pause 0.1)))))
       (prog1
           nil
@@ -117,6 +125,13 @@
     (flet ((headline-date (h)
              (rss-item-date (rss-headline-item h))))
       (sort (remove-if-not #'(lambda (h) (> (headline-date h) since)) headlines) #'> :key #'headline-date))))
+
+(defmethod rss-aggregator-wait-for-headlines ((agg rss-aggregator) &optional timeout)
+  "Waits for new headlines to be available before continuing. Returns NIL if timeout elapsed instead."
+  (with-slots (condition lock)
+      agg
+    (mp:with-lock (lock)
+      (mp:condition-variable-wait condition lock :timeout timeout))))
 
 (defmethod rss-aggregator-feeds ((agg rss-aggregator))
   "Return the list of URLs being aggregated."

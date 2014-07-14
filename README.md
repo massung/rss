@@ -64,6 +64,14 @@ The `rss-aggregator-headlines` method returns the headlines in sorted order. It 
 	
 By default, `since` is 0 (all headlines will be returned).
 
+Now, obviously it would be a pain to have to continuously poll the aggregator for new headlines. To avoid this, use the `rss-aggregator-wait-for-headlines` function.
+
+	(rss-aggregator-wait-for-headlines aggregator &optional timeout)
+
+This function returns `NIL` if *timeout* elapsed and there were no new headlines or `T` if new headlines are waiting to be read.
+
+*Note: Under-the-hood this uses a condition variable, is thread-safe, and many threads can call it and will all receive the signal as the condition is broadcast when new headlines are available.*
+
 To stop aggregating and kill all processes, simply call `rss-aggregator-stop`. And to start the aggregator process again, simply call `rss-aggregator-start`.
 
 	(rss-aggregator-stop aggregator)
