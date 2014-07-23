@@ -41,6 +41,7 @@
    #:rss-item-guid
    #:rss-item-summary
    #:rss-item-content
+   #:rss-item-categories
    #:rss-item-date
 
    ;; rss-content readers
@@ -65,30 +66,31 @@
 (in-package :rss)
 
 (defclass rss-feed ()
-  ((title     :initarg :title     :reader rss-feed-title)
-   (subtitle  :initarg :subtitle  :reader rss-feed-subtitle)
-   (link      :initarg :link      :reader rss-feed-link)
-   (date      :initarg :date      :reader rss-feed-date)
-   (ttl       :initarg :ttl       :reader rss-feed-ttl)
-   (image     :initarg :image     :reader rss-feed-image)
-   (icon      :initarg :icon      :reader rss-feed-icon)
-   (items     :initarg :items     :reader rss-feed-items))
+  ((title      :initarg :title      :reader rss-feed-title)
+   (subtitle   :initarg :subtitle   :reader rss-feed-subtitle)
+   (link       :initarg :link       :reader rss-feed-link)
+   (date       :initarg :date       :reader rss-feed-date)
+   (ttl        :initarg :ttl        :reader rss-feed-ttl)
+   (image      :initarg :image      :reader rss-feed-image)
+   (icon       :initarg :icon       :reader rss-feed-icon)
+   (items      :initarg :items      :reader rss-feed-items))
   (:documentation "RSS atom feed or channel."))
 
 (defclass rss-item ()
-  ((title     :initarg :title     :reader rss-item-title)
-   (link      :initarg :link      :reader rss-item-link)
-   (summary   :initarg :summary   :reader rss-item-summary)
-   (content   :initarg :content   :reader rss-item-content)
-   (date      :initarg :date      :reader rss-item-date)
-   (author    :initarg :author    :reader rss-item-author)
-   (guid      :initarg :guid      :reader rss-item-guid))
+  ((title      :initarg :title      :reader rss-item-title)
+   (link       :initarg :link       :reader rss-item-link)
+   (summary    :initarg :summary    :reader rss-item-summary)
+   (content    :initarg :content    :reader rss-item-content)
+   (categories :initarg :categories :reader rss-item-categories)
+   (date       :initarg :date       :reader rss-item-date)
+   (author     :initarg :author     :reader rss-item-author)
+   (guid       :initarg :guid       :reader rss-item-guid))
   (:documentation "RSS atom entry or channel item."))
 
 (defclass rss-content ()
-  ((type      :initarg :type      :reader rss-content-type)
-   (summary   :initarg :summary   :reader rss-content-summary)
-   (link      :initarg :link      :reader rss-content-link))
+  ((type       :initarg :type       :reader rss-content-type)
+   (summary    :initarg :summary    :reader rss-content-summary)
+   (link       :initarg :link       :reader rss-content-link))
   (:documentation "RSS item content data."))
 
 (defmethod print-object ((feed rss-feed) s)
@@ -171,6 +173,9 @@
                  ;; find multimedia content
                  :content    (mapcar #'rss-parse-enclosure (query-xml item "enclosure"))
 
+                 ;; category tags
+                 :categories (mapcar #'node-value (query-xml item "category"))
+
                  ;; RSS 2.0 items only have a publish date
                  :date       (rss-query-date item '("pubDate") #'encode-universal-rfc822-time)
 
@@ -214,6 +219,9 @@
 
                  ;; look for multimedia content
                  :content    (mapcar #'rss-parse-atom-content (query-xml entry "content"))
+
+                 ;; category tags
+                 :categories (mapcar #'node-value (query-xml entry "category"))
 
                  ;; use the unique id if present, otherwise the entry link
                  :guid       (or (rss-query (find-xml entry "id"))
