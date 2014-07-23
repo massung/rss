@@ -32,7 +32,8 @@
   (:documentation "A collection of news headlines and feed processes."))
 
 (defclass rss-headline ()
-  ((feed :initarg :feed :reader rss-headline-feed)
+  ((link :initarg :link :reader rss-headline-link)
+   (feed :initarg :feed :reader rss-headline-feed)
    (item :initarg :item :reader rss-headline-item))
   (:documentation "A single, aggregated headline."))
 
@@ -162,7 +163,10 @@
                            
                            ;; send all the headlines to the aggregator
                            (dolist (item (rss-feed-items feed))
-                             (mp:mailbox-send mailbox (make-instance 'rss-headline :feed feed :item item))))
+                             (mp:mailbox-send mailbox (make-instance 'rss-headline
+                                                                     :link (mp:process-name mp:*current-process*)
+                                                                     :feed feed
+                                                                     :item item))))
                        
                        ;; something bad happened
                        (error (c) nil))

@@ -60,6 +60,7 @@
    #:rss-aggregator-feeds
 
    ;; headline aggregation readers
+   #:rss-headline-link
    #:rss-headline-feed
    #:rss-headline-item))
 
