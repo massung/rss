@@ -69,15 +69,17 @@
              (headline-exists-p (guid)
                (find guid headlines :test #'string-equal :key #'headline-guid))
              (aggregate ()
-               (loop (if-let (headline (mp:mailbox-wait-for-event mailbox))
-                         (let ((guid (rss-item-guid (rss-headline-item headline))))
-                           (unless (headline-exists-p guid)
-                             (sys:atomic-push headline headlines))
+               (loop (when-let (headline (mp:mailbox-wait-for-event mailbox))
+                       (let ((guid (rss-item-guid (rss-headline-item headline))))
+                         (unless (headline-exists-p guid)
+                           (sys:atomic-push headline headlines))
+                         
+                         ;; inform all threads waiting on new headlines that one is available
+                         (mp:with-lock (lock)
+                           (mp:condition-variable-broadcast condition))))
 
-                           ;; inform all threads waiting on new headlines that one is available
-                           (mp:with-lock (lock)
-                             (mp:condition-variable-broadcast condition)))
-                       (mp:current-process-pause 0.1)))))
+                     ;; wait before checking again, don't sleep if something is there
+                     (mp:current-process-pause 0.1 #'mp:mailbox-not-empty-p mailbox))))
       (prog1
           nil
         (setf process (mp:process-run-function "RSS Aggregator" nil #'aggregate))))))
