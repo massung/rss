@@ -107,8 +107,10 @@
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
   (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
-    (when-let (doc (parse-xml (response-body resp) url))
-      (rss-parse doc))))
+    (multiple-value-bind (body format)
+        (decode-response-body resp :utf-8)
+      (when-let (doc (parse-xml body url format))
+        (rss-parse doc)))))
 
 (defun rss-parse (doc)
   "Parse an XML document as an RSS feed."
