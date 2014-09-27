@@ -106,18 +106,19 @@
 
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
-  (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
-    (multiple-value-bind (body format)
-        (decode-response-body resp :utf-8)
-      (when-let (doc (parse-xml body url format))
-        (rss-parse doc)))))
+  (with-url (url url)
+    (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
+      (multiple-value-bind (body format)
+          (decode-response-body resp :utf-8)
+        (when-let (doc (parse-xml body url format))
+          (rss-parse doc (format-url url)))))))
 
-(defun rss-parse (doc)
+(defun rss-parse (doc &optional source-url)
   "Parse an XML document as an RSS feed."
   (when-let (node (find-xml doc "/feed"))
-    (return-from rss-parse (rss-parse-atom node)))
+    (return-from rss-parse (rss-parse-atom node source-url)))
   (when-let (node (find-xml doc "/rss/channel"))
-    (return-from rss-parse (rss-parse-channel node))))
+    (return-from rss-parse (rss-parse-channel node source-url))))
 
 (defun rss-content-find (item type)
   "Returns a list of rss-content objects matching a particular type in an rss-item."

@@ -19,9 +19,9 @@
 
 (in-package :rss)
 
-(defun rss-parse-channel (channel)
+(defun rss-parse-channel (channel url)
   "Parse the items of an RSS 2.0 channel."
-  (let ((link (rss-find-link channel)))
+  (let ((link (or (rss-find-link channel) url)))
     (make-instance 'rss-feed
                    :title      (rss-query (find-xml channel "title"))
                    :subtitle   (rss-query (find-xml channel "description"))
@@ -64,7 +64,7 @@
                    :date       (rss-query-date item '("pubDate") #'encode-universal-rfc822-time)
                    
                    ;; for the unique identifier, use the link if no guid is present
-                   :guid       (rss-query (or (find-xml item "guid") link)))))
+                   :guid       (or (rss-query (find-xml item "guid")) link))))
 
 (defun rss-find-link (node)
   "Scan all the link tags until it finds a valid URL."

@@ -19,25 +19,28 @@
 
 (in-package :rss)
 
-(defun rss-parse-atom (atom)
+(defun rss-parse-atom (atom url)
   "Parse the items of an ATOM feed."
-  (make-instance 'rss-feed
-                 :title      (rss-query (find-xml atom "title"))
-                 :subtitle   (rss-query (find-xml atom "subtitle"))
-                 :link       (rss-query (find-xml atom "link") #'rss-parse-atom-link)
+  (let ((link (or (rss-query (find-xml atom "link") #'rss-parse-atom-link) url)))
+    (make-instance 'rss-feed
+                   :title      (rss-query (find-xml atom "title"))
+                   :subtitle   (rss-query (find-xml atom "subtitle"))
 
-                 ;; time to live (minutes between updates)
-                 :ttl        (rss-query (find-xml atom "ttl") #'parse-integer)
+                   ;; set the link back to the site
+                   :link       link
 
-                 ;; can have a logo and icon
-                 :image      (rss-query (find-xml atom "logo"))
-                 :icon       (rss-query (find-xml atom "icon"))
-
-                 ;; use the build date or publish date
-                 :date       (rss-query-date atom '("updated" "published") #'encode-universal-rfc3339-time)
-
-                 ;; parse all the entries in the feed
-                 :items      (mapcar #'rss-parse-atom-entry (query-xml atom "entry"))))
+                   ;; time to live (minutes between updates)
+                   :ttl        (rss-query (find-xml atom "ttl") #'parse-integer)
+                   
+                   ;; can have a logo and icon
+                   :image      (rss-query (find-xml atom "logo"))
+                   :icon       (rss-query (find-xml atom "icon"))
+                   
+                   ;; use the build date or publish date
+                   :date       (rss-query-date atom '("updated" "published") #'encode-universal-rfc3339-time)
+                   
+                   ;; parse all the entries in the feed
+                   :items      (mapcar #'rss-parse-atom-entry (query-xml atom "entry")))))
 
 (defun rss-parse-atom-entry (entry)
   "Returns an RSS item from an ATOM feed."
