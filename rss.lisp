@@ -53,14 +53,12 @@
    ;; rss-aggregator methods
    #:rss-aggregator-start
    #:rss-aggregator-stop
-   #:rss-aggregator-clear
-   #:rss-aggregator-reset
    #:rss-aggregator-headlines
    #:rss-aggregator-wait-for-headlines
    #:rss-aggregator-feeds
+   #:rss-aggregator-feed-urls
 
    ;; headline aggregation readers
-   #:rss-headline-link
    #:rss-headline-feed
    #:rss-headline-item))
 

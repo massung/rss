@@ -20,22 +20,30 @@
 (in-package :rss)
 
 (defclass rss-aggregator ()
-  ((process   :initform nil)
-   (feeds     :initform nil)
-   (headlines :initform nil)
-   (mailbox   :initform nil)
+  ((condition :initform (mp:make-condition-variable))
+   (lock      :initform (mp:make-lock))
+   (mailbox   :initform (mp:make-mailbox))
+   (process   :initform ())
+   (readers   :initform ())
+   (headlines :initform ()))
+  (:extra-initargs '(:feed-urls :start))
+  (:documentation "A collection of news feed readers."))
 
-   ;; notification condition lock
-   (condition :initform (mp:make-condition-variable))
-   (lock      :initform (mp:make-lock)))
-  (:extra-initargs '(:feed-urls))
-  (:documentation "A collection of news headlines and feed processes."))
+(defclass rss-reader ()
+  ((process :initarg :process :reader rss-reader-process)
+   (url     :initarg :url     :reader rss-reader-url)
+   (feed    :initarg :feed    :reader rss-reader-feed))
+  (:documentation "A process that is continuously polling an rss feed."))
 
 (defclass rss-headline ()
-  ((link :initarg :link :reader rss-headline-link)
-   (feed :initarg :feed :reader rss-headline-feed)
+  ((feed :initarg :feed :reader rss-headline-feed)
    (item :initarg :item :reader rss-headline-item))
   (:documentation "A single, aggregated headline."))
+
+(defmethod print-object ((reader rss-reader) stream)
+  "Print a reader to a stream."
+  (print-unreadable-object (reader stream :type t)
+    (format stream "~s" (mp:process-name (rss-reader-process reader)))))
 
 (defmethod print-object ((headline rss-headline) stream)
   "Print a headline to a stream."
@@ -44,92 +52,65 @@
           (feed (rss-headline-feed headline)))
       (format stream "~s via ~s" (rss-item-title item) (rss-feed-title feed)))))
 
-(defmethod initialize-instance :after ((agg rss-aggregator) &key feed-urls)
+(defmethod initialize-instance :after ((agg rss-aggregator) &key feed-urls (start t))
   "Initialize the aggregator and start aggregating feeds."
-  (rss-aggregator-start agg)
+  (setf (rss-aggregator-feed-urls agg) feed-urls)
 
-  ;; set the list of feeds to start aggregating
-  (setf (rss-aggregator-feeds agg) feed-urls))
+  ;; start the aggregator unless told not to
+  (when start
+    (rss-aggregator-start agg)))
 
 (defmethod rss-aggregator-start ((agg rss-aggregator))
-  "Create the aggregator process."
-  (with-slots (process headlines mailbox condition lock)
+  "Start the feed reader processes that are not running."
+  (with-slots (readers mailbox lock condition headlines process)
       agg
+    (labels ((collect-headlines (r)
+               (when-let (f (rss-reader-feed r))
+                 (loop for i in (rss-feed-items f) collect (make-instance 'rss-headline :feed f :item i))))
 
-    ;; stop the aggregator if it's running
-    (when process
-      (mp:process-kill process))
-
-    ;; create a new mailbox
-    (setf mailbox (mp:make-mailbox))
-
-    ;; start the aggregation process
-    (labels ((headline-guid (headline)
-               (rss-item-guid (rss-headline-item headline)))
-             (headline-exists-p (guid)
-               (find guid headlines :test #'string-equal :key #'headline-guid))
+             ;; wait for more headlines then re-aggregate
              (aggregate ()
-               (loop (when-let (headline (mp:mailbox-wait-for-event mailbox))
-                       (let ((guid (rss-item-guid (rss-headline-item headline))))
-                         (unless (headline-exists-p guid)
-                           (sys:atomic-push headline headlines))
-                         
-                         ;; inform all threads waiting on new headlines that one is available
-                         (mp:with-lock (lock)
-                           (mp:condition-variable-broadcast condition))))
+               (loop (when (mp:mailbox-wait-for-event mailbox)
 
-                     ;; wait before checking again, don't sleep if something is there
-                     (mp:current-process-pause 0.1 #'mp:mailbox-not-empty-p mailbox))))
-      (prog1
-          nil
-        (setf process (mp:process-run-function "RSS Aggregator" nil #'aggregate))))))
+                       ;; collect all the headlines from the feeds
+                       (sys:atomic-exchange headlines (mapcan #'collect-headlines readers))
+                           
+                       ;; signal to any process waiting that there are new headlines
+                       (mp:with-lock (lock)
+                         (mp:condition-variable-broadcast condition))))))
+
+      ;; start a process to aggregate headlines
+      (setf process (mp:process-run-function "RSS Aggregator" nil #'aggregate)))))
 
 (defmethod rss-aggregator-stop ((agg rss-aggregator))
   "Stop all reader processes and the aggregation process. Headlines stay intact."
-  (with-slots (process feeds)
+  (with-slots (readers process)
       agg
 
-    ;; stop processing all the feeds first
-    (mapc #'mp:process-kill feeds)
+    ;; stop all feed readers
+    (loop for r in readers do (mp:process-kill (rss-reader-process r)))
 
-    ;; clear the reader list
-    (setf feeds nil)
-
-    ;; stop the aggregation process
+    ;; stop aggregating headlines
     (when process
       (mp:process-kill process))))
 
-(defmethod rss-aggregator-clear ((agg rss-aggregator) &optional (before (get-universal-time)))
-  "Clear all the headlines from the aggregator."
-  (with-slots (headlines)
-      agg
-    (flet ((headline-date (h)
-             (rss-item-date (rss-headline-item h))))
-      (sys:atomic-exchange headlines (remove-if #'(lambda (h) (< (headline-date h) before)) headlines)))))
-
-(defmethod rss-aggregator-reset ((agg rss-aggregator))
-  "Clear headlines, stop aggregating, and restart all reader processes."
-  (let ((feed-urls (rss-aggregator-feeds agg)))
-
-    ;; stop all running feed processes and the aggregator process
-    (rss-aggregator-stop agg)
-
-    ;; clear the headlines and restart
-    (rss-aggregator-clear agg)
-    (rss-aggregator-start agg)
-  
-    ;; start feed processes again
-    (setf (rss-aggregator-feeds agg) feed-urls)))
-
-(defmethod rss-aggregator-headlines ((agg rss-aggregator) &optional (since 0))
+(defmethod rss-aggregator-headlines ((agg rss-aggregator) &key (since 0))
   "Return all the headlines sorted since a given timestamp."
   (with-slots (headlines)
       agg
-    (flet ((headline-date (h)
-             (rss-item-date (rss-headline-item h))))
-      (sort (remove-if-not #'(lambda (h) (> (headline-date h) since)) headlines) #'> :key #'headline-date))))
+    (loop for h in headlines
 
-(defmethod rss-aggregator-wait-for-headlines ((agg rss-aggregator) &optional timeout)
+          ;; get the item and publish date
+          for i = (rss-headline-item h)
+          for d = (rss-item-date i)
+
+          ;; get all headlines since the desired time
+          when (>= d since) collect h into hs
+
+          ;; return the headlines sorted by date in descending order
+          finally (return (sort hs #'> :key #'(lambda (h) (rss-item-date (rss-headline-item h))))))))
+
+(defmethod rss-aggregator-wait-for-headlines ((agg rss-aggregator) &key timeout)
   "Waits for new headlines to be available before continuing. Returns NIL if timeout elapsed instead."
   (with-slots (condition lock)
       agg
@@ -137,47 +118,54 @@
       (mp:condition-variable-wait condition lock :timeout timeout))))
 
 (defmethod rss-aggregator-feeds ((agg rss-aggregator))
+  "Return the list of URLs being aggregated along with the latest feed downloaded."
+  (with-slots (readers)
+      agg
+    (loop for r in readers collect (list (rss-reader-url r) (rss-reader-feed r)))))
+
+(defmethod rss-aggregator-feed-urls ((agg rss-aggregator))
   "Return the list of URLs being aggregated."
-  (with-slots (feeds)
+  (with-slots (readers)
       agg
-    (mapcar #'mp:process-name feeds)))
+    (mapcar #'rss-reader-url readers)))
 
-(defmethod (setf rss-aggregator-feeds) (feed-urls (agg rss-aggregator))
+(defmethod (setf rss-aggregator-feed-urls) (feed-urls (agg rss-aggregator))
   "Stop feeds no longer desired to be aggregated and start aggregating new feeds."
-  (with-slots (feeds mailbox)
+  (with-slots (readers lock condition mailbox)
       agg
 
-    ;; stop all feed processes
-    (mapc #'mp:process-kill feeds)
+    ;; stop all the reader processes
+    (dolist (reader readers)
+      (mp:process-kill (rss-reader-process reader)))
 
-    ;; clear the reader list
-    (setf feeds nil)
-
-    ;; the feed process loop
-    (flet ((reader (url)
+    ;; create readers for each url
+    (flet ((reader (r)
              (let (ttl)
                (loop (handler-case
-                         (when-let (feed (rss-get url))
+                         (when-let (feed (rss-get (rss-reader-url r)))
+                           (sys:atomic-exchange (slot-value r 'feed) feed)
+                           
+                           ;; set the name of the process to the feed title
+                           (setf (mp:process-name mp:*current-process*) (rss-feed-title feed))
+
+                           ;; send the feed to the aggregator mailbox
+                           (mp:mailbox-send mailbox feed)
                            
                            ;; set the time-to-live value
                            (when-let (minutes (rss-feed-ttl feed))
-                             (setf ttl (* minutes 60)))
-                           
-                           ;; send all the headlines to the aggregator
-                           (dolist (item (rss-feed-items feed))
-                             (mp:mailbox-send mailbox (make-instance 'rss-headline
-                                                                     :link (mp:process-name mp:*current-process*)
-                                                                     :feed feed
-                                                                     :item item))))
+                             (setf ttl (* minutes 60))))
                        
-                       ;; something bad happened
-                       (error (c) nil))
+                       ;; something bad happened, output a warning
+                       (condition (c) (warn c)))
                      
                      ;; wait a bit before reading again
                      (mp:current-process-pause (or ttl 300))))))
 
-      ;; start each feed process
-      (dolist (url feed-urls)
-        (let ((process (with-url (url url)
-                         (mp:process-run-function (format-url url) '() #'reader url))))
-          (push process feeds))))))
+      ;; create a reader process for each url
+      (setf readers (loop for feed-url in feed-urls
+                          for url = (copy-url feed-url)
+                          for reader = (make-instance 'rss-reader :url url :feed nil)
+                          for process = (mp:process-run-function (format-url url) nil #'reader reader)
+                          do (setf (slot-value reader 'process) process)
+                          collect reader)))))
+
