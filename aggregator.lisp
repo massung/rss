@@ -156,7 +156,7 @@
                              (setf ttl (* minutes 60))))
                        
                        ;; something bad happened, output a warning
-                       (condition (c) (warn c)))
+                       (condition (c) (warn (princ-to-string c))))
                      
                      ;; wait a bit before reading again
                      (mp:current-process-pause (or ttl 300))))))
