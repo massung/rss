@@ -1,6 +1,6 @@
 ;;;; RSS for LispWorks
 ;;;;
-;;;; Copyright (c) 2012 by Jeffrey Massung
+;;;; Copyright (c) 2015 by Jeffrey Massung
 ;;;;
 ;;;; This file is provided to you under the Apache License,
 ;;;; Version 2.0 (the "License"); you may not use this file
@@ -108,14 +108,14 @@
     (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
       (multiple-value-bind (body format)
           (decode-response-body resp :utf-8)
-        (when-let (doc (parse-xml body url format))
+        (when-let (doc (xml-parse body url format))
           (rss-parse doc (format-url url)))))))
 
 (defun rss-parse (doc &optional source-url)
   "Parse an XML document as an RSS feed."
-  (when-let (node (find-xml doc "/feed"))
+  (when-let (node (xml-query doc "/feed"))
     (return-from rss-parse (rss-parse-atom node source-url)))
-  (when-let (node (find-xml doc "/rss/channel"))
+  (when-let (node (xml-query doc "/rss/channel"))
     (return-from rss-parse (rss-parse-channel node source-url))))
 
 (defun rss-content-find (item type)
@@ -124,18 +124,18 @@
            (eql (search type (rss-content-type content) :test #'string=) 0)))
     (remove-if-not #'match-content-p (rss-item-content item))))
 
-(defun rss-query (node &optional (if-found #'node-value))
+(defun rss-query (node &optional (if-found #'xml-node-value))
   "Apply an XML node through a chain of functions until NIL or the final result."
   (and node (funcall if-found node)))
 
 (defun rss-query-value (node &optional (if-found #'identity))
   "Apply a function to a node value if the node exists."
-  (and node (funcall if-found (node-value node))))
+  (and node (funcall if-found (xml-node-value node))))
 
 (defun rss-query-date (node locations encode)
   "Attempts to get the date of an RSS feed/item. If none can be found then use the current time."
-  (or (loop :for loc :in locations
-            :for date := (rss-query-value (find-xml node loc) encode)
-            :when date
-            :return date)
+  (or (loop for loc in locations
+            for date = (rss-query-value (xml-query node loc) encode)
+            when date
+            return date)
       (get-universal-time)))
