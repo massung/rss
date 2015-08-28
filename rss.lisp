@@ -18,7 +18,7 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :rfc-date :xml :url :http)
+  (:use :cl :ccl :rfc-date :xml :url :http)
   (:export
    #:rss-get
    #:rss-parse
@@ -56,7 +56,6 @@
    #:rss-aggregator-headlines
    #:rss-aggregator-wait-for-headlines
    #:rss-aggregator-feeds
-   #:rss-aggregator-feed-urls
 
    ;; headline aggregation readers
    #:rss-headline-feed
