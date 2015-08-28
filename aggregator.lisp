@@ -23,9 +23,13 @@
 
 (defclass rss-aggregator ()
   ((lock      :initform (make-read-write-lock))
-   (condition :initform (make-semaphore))
-   (readers   :initform ())
-   (headlines :initform ()))
+
+   ;; no time of last aggregation
+   (stamp     :initform 0)
+
+   ;; no feed readers and no headlines aggregated
+   (readers   :initform nil)
+   (headlines :initform nil))
   (:documentation "A collection of news feed readers."))
 
 ;;; ----------------------------------------------------
@@ -85,9 +89,9 @@
                  (rss-aggregator-aggregate agg feed)
 
                  ;; wait TTL minutes for next iteration
-                 (let ((stamp (+ (get-universal-time) (* ttl 60))))
+                 (let ((next-fetch (+ (get-universal-time) (* ttl 60))))
                    (flet ((expired-p ()
-                            (>= (get-universal-time) stamp)))
+                            (>= (get-universal-time) next-fetch)))
                      (process-wait "TTL wait..." #'expired-p)))))))
 
       (dolist (r readers)
@@ -106,7 +110,7 @@
 
 (defmethod rss-aggregator-aggregate ((agg rss-aggregator) (feed rss-feed))
   "Add all the items from a feed into the aggregator."
-  (with-slots (lock condition headlines)
+  (with-slots (lock stamp headlines)
       agg
     (flet ((headline-guid (h)
              (rss-item-guid (rss-headline-item h)))
@@ -134,10 +138,10 @@
                 (let ((h (make-instance 'rss-headline
                                         :feed feed
                                         :item item)))
-                  (push h headlines)))))))
+                  (push h headlines)))))
 
-    ;; signal that there are potentially new headlines
-    (signal-semaphore condition)))
+        ;; finally, update the time the last aggregate happened
+        (setf stamp (get-universal-time))))))
 
 ;;; ----------------------------------------------------
 
@@ -163,11 +167,16 @@
 
 ;;; ----------------------------------------------------
 
-(defmethod rss-aggregator-wait-for-headlines ((agg rss-aggregator))
+(defmethod rss-aggregator-wait ((agg rss-aggregator) &key (since 0) timeout)
   "Waits for new headlines to be available before continuing."
-  (with-slots (condition)
+  (with-slots (stamp lock)
       agg
-    (wait-on-semaphore condition)))
+    (let ((ticks (and timeout (* timeout *ticks-per-second*))))
+      (flet ((updated-p ()
+               (with-read-lock (lock)
+                 (> stamp since))))
+        (when (process-wait-with-timeout "RSS Wait" ticks #'updated-p)
+          stamp)))))
 
 ;;; ----------------------------------------------------
 
