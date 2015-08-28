@@ -175,8 +175,7 @@
       (flet ((updated-p ()
                (with-read-lock (lock)
                  (> stamp since))))
-        (when (process-wait-with-timeout "RSS Wait" ticks #'updated-p)
-          stamp)))))
+        (values (process-wait-with-timeout "RSS Wait" ticks #'updated-p) stamp)))))
 
 ;;; ----------------------------------------------------
 
