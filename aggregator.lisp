@@ -1,6 +1,6 @@
-;;;; RSS Aggregator for LispWorks
+;;;; RSS Parer and Aggregator for ClozureCL
 ;;;;
-;;;; Copyright (c) 2015 by Jeffrey Massung
+;;;; Copyright (c) Jeffrey Massung
 ;;;;
 ;;;; This file is provided to you under the Apache License,
 ;;;; Version 2.0 (the "License"); you may not use this file
@@ -19,15 +19,16 @@
 
 (in-package :rss)
 
+;;; ----------------------------------------------------
+
 (defclass rss-aggregator ()
-  ((condition :initform (mp:make-condition-variable))
-   (lock      :initform (mp:make-lock))
-   (mailbox   :initform (mp:make-mailbox))
+  ((lock      :initform (ccl:make-read-write-lock))
    (process   :initform ())
    (readers   :initform ())
    (headlines :initform ()))
-  (:extra-initargs '(:feed-urls :start))
   (:documentation "A collection of news feed readers."))
+
+;;; ----------------------------------------------------
 
 (defclass rss-reader ()
   ((process :initarg :process :reader rss-reader-process)
@@ -35,22 +36,29 @@
    (feed    :initarg :feed    :reader rss-reader-feed))
   (:documentation "A process that is continuously polling an rss feed."))
 
+;;; ----------------------------------------------------
+
 (defclass rss-headline ()
   ((feed :initarg :feed :reader rss-headline-feed)
    (item :initarg :item :reader rss-headline-item))
   (:documentation "A single, aggregated headline."))
 
+;;; ----------------------------------------------------
+
 (defmethod print-object ((reader rss-reader) stream)
   "Print a reader to a stream."
   (print-unreadable-object (reader stream :type t)
-    (format stream "~s" (mp:process-name (rss-reader-process reader)))))
+    (prin1 (ccl:process-name (rss-reader-process reader) stream))))
+
+;;; ----------------------------------------------------
 
 (defmethod print-object ((headline rss-headline) stream)
   "Print a headline to a stream."
   (print-unreadable-object (headline stream :type t)
-    (let ((item (rss-headline-item headline))
-          (feed (rss-headline-feed headline)))
-      (format stream "~s via ~s" (rss-item-title item) (rss-feed-title feed)))))
+    (let ((item (rss-headline-item headline)))
+      (prin1 (rss-item-title item) stream))))
+
+;;; ----------------------------------------------------
 
 (defmethod initialize-instance :after ((agg rss-aggregator) &key feed-urls (start t))
   "Initialize the aggregator and start aggregating feeds."
@@ -74,7 +82,7 @@
 
                        ;; collect all the headlines from the feeds
                        (sys:atomic-exchange headlines (mapcan #'collect-headlines readers))
-                           
+
                        ;; signal to any process waiting that there are new headlines
                        (mp:with-lock (lock)
                          (mp:condition-variable-broadcast condition))))))
@@ -144,20 +152,20 @@
                (loop (handler-case
                          (when-let (feed (rss-get (rss-reader-url r)))
                            (sys:atomic-exchange (slot-value r 'feed) feed)
-                           
+
                            ;; set the name of the process to the feed title
                            (setf (mp:process-name mp:*current-process*) (rss-feed-title feed))
 
                            ;; send the feed to the aggregator mailbox
                            (mp:mailbox-send mailbox feed)
-                           
+
                            ;; set the time-to-live value
                            (when-let (minutes (rss-feed-ttl feed))
                              (setf ttl (* minutes 60))))
-                       
+
                        ;; something bad happened, output a warning
                        (condition (c) (warn (princ-to-string c))))
-                     
+
                      ;; wait a bit before reading again
                      (mp:current-process-pause (or ttl 300))))))
 
@@ -168,4 +176,3 @@
                           for process = (mp:process-run-function (format-url url) nil #'reader reader)
                           do (setf (slot-value reader 'process) process)
                           collect reader)))))
-

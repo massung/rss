@@ -1,6 +1,6 @@
-;;;; RSS for LispWorks
+;;;; RSS Parser and Aggregator for ClozureCL
 ;;;;
-;;;; Copyright (c) 2015 by Jeffrey Massung
+;;;; Copyright (c) Jeffrey Massung
 ;;;;
 ;;;; This file is provided to you under the Apache License,
 ;;;; Version 2.0 (the "License"); you may not use this file
@@ -18,7 +18,7 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :lw :rfc-date :xml :http)
+  (:use :cl :rfc-date :xml :url :http)
   (:export
    #:rss-get
    #:rss-parse
@@ -49,7 +49,7 @@
    #:rss-content-type
    #:rss-content-summary
    #:rss-content-link
-   
+
    ;; rss-aggregator methods
    #:rss-aggregator-start
    #:rss-aggregator-stop
@@ -64,6 +64,8 @@
 
 (in-package :rss)
 
+;;; ----------------------------------------------------
+
 (defclass rss-feed ()
   ((title      :initarg :title      :reader rss-feed-title)
    (subtitle   :initarg :subtitle   :reader rss-feed-subtitle)
@@ -74,6 +76,8 @@
    (icon       :initarg :icon       :reader rss-feed-icon)
    (items      :initarg :items      :reader rss-feed-items))
   (:documentation "RSS atom feed or channel."))
+
+;;; ----------------------------------------------------
 
 (defclass rss-item ()
   ((title      :initarg :title      :reader rss-item-title)
@@ -86,56 +90,83 @@
    (guid       :initarg :guid       :reader rss-item-guid))
   (:documentation "RSS atom entry or channel item."))
 
+;;; ----------------------------------------------------
+
 (defclass rss-content ()
   ((type       :initarg :type       :reader rss-content-type)
    (summary    :initarg :summary    :reader rss-content-summary)
    (link       :initarg :link       :reader rss-content-link))
   (:documentation "RSS item content data."))
 
+;;; ----------------------------------------------------
+
 (defmethod print-object ((feed rss-feed) s)
   "Output an RSS feed object to a stream."
   (print-unreadable-object (feed s :type t)
-    (format s "~s (~a items)" (rss-feed-title feed) (length (rss-feed-items feed)))))
+    (with-slots (title items)
+        feed
+      (format s "~s (~a items)" title (length items)))))
+
+;;; ----------------------------------------------------
 
 (defmethod print-object ((item rss-item) s)
   "Output an RSS item object to a stream."
   (print-unreadable-object (item s :type t)
-    (format s "~s" (rss-item-title item))))
+    (prin1 (rss-item-title item) s)))
+
+;;; ----------------------------------------------------
 
 (defun rss-get (url &key (redirect-limit 3))
   "Fetch a feed from a URL and parse it."
-  (with-url (url url)
-    (with-response (resp (http-follow (http-get url) :redirect-limit redirect-limit))
-      (multiple-value-bind (body format)
-          (decode-response-body resp :utf-8)
-        (when-let (doc (xml-parse body url format))
-          (rss-parse doc (format-url url)))))))
+  (with-response (resp (http-get url :redirect-limit redirect-limit))
+    (let ((doc (xml-parse (resp-body resp) url)))
+      (rss-parse doc url))))
 
-(defun rss-parse (doc &optional source-url)
+;;; ----------------------------------------------------
+
+(defun rss-parse (doc &optional url)
   "Parse an XML document as an RSS feed."
-  (when-let (node (xml-query doc "/feed"))
-    (return-from rss-parse (rss-parse-atom node source-url)))
-  (when-let (node (xml-query doc "/rss/channel"))
-    (return-from rss-parse (rss-parse-channel node source-url))))
+  (let ((node (first (xml-query doc "/feed"))))
+    (when node (return-from rss-parse (rss-parse-atom node url))))
+  (let ((node (first (xml-query doc "/rss/channel"))))
+    (when node (return-from rss-parse (rss-parse-channel node url)))))
 
-(defun rss-content-find (item type)
-  "Returns a list of rss-content objects matching a particular type in an rss-item."
-  (flet ((match-content-p (content)
-           (eql (search type (rss-content-type content) :test #'string=) 0)))
+;;; ----------------------------------------------------
+
+(defun rss-content-find (item type &optional subtype)
+  "Returns a list of rss-content objects matching a particular type."
+  (flet ((match-content-p (c)
+           (destructuring-bind (fst &optional snd)
+               (content-mime-type c)
+             (and (string-equal fst type)
+                  (or (null subtype)
+                      (string-equal snd subtype))))))
     (remove-if-not #'match-content-p (rss-item-content item))))
 
-(defun rss-query (node &optional (if-found #'xml-node-value))
-  "Apply an XML node through a chain of functions until NIL or the final result."
-  (and node (funcall if-found node)))
+;;; ----------------------------------------------------
 
-(defun rss-query-value (node &optional (if-found #'identity))
+(defun rss-query (node path &optional (if-found #'xml-node-value))
+  "Search for a child tag of an node."
+  (let ((q (xml-query node path)))
+    (when q
+      (funcall if-found (first q)))))
+
+;;; ----------------------------------------------------
+
+(defun rss-query-value (node path &optional (if-found #'identity))
   "Apply a function to a node value if the node exists."
-  (and node (funcall if-found (xml-node-value node))))
+  (let ((value (rss-query node path)))
+    (when value
+      (funcall if-found value))))
 
-(defun rss-query-date (node locations encode)
-  "Attempts to get the date of an RSS feed/item. If none can be found then use the current time."
-  (or (loop for loc in locations
-            for date = (rss-query-value (xml-query node loc) encode)
-            when date
-            return date)
-      (get-universal-time)))
+;;; ----------------------------------------------------
+
+(defun rss-query-date (node locations date-format)
+  "Attempts to get the date of an RSS feed/item."
+  (do ((loc (pop locations)
+            (pop locations)))
+      ((null loc)
+       (get-universal-time))
+    (let ((date (rss-query node loc)))
+      (when date
+        (return (encode-universal-rfc-time date date-format))))))

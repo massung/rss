@@ -1,6 +1,6 @@
-;;;; RSS for LispWorks
+;;;; RSS Parser and Aggregator for ClozureCL
 ;;;;
-;;;; Copyright (c) 2015 by Jeffrey Massung
+;;;; Copyright (c) Jeffrey Massung
 ;;;;
 ;;;; This file is provided to you under the Apache License,
 ;;;; Version 2.0 (the "License"); you may not use this file
@@ -19,65 +19,91 @@
 
 (in-package :rss)
 
-(defun rss-parse-channel (channel url)
-  "Parse the items of an RSS 2.0 channel."
-  (let ((link (or (rss-find-link channel) url)))
-    (make-instance 'rss-feed
-                   :title      (rss-query (xml-query channel "title"))
-                   :subtitle   (rss-query (xml-query channel "description"))
-                   :image      (rss-query (xml-query channel "image/url"))
-                   
-                   ;; set the link to the homepage
-                   :link       link
-                   
-                   ;; time to live (number of minutes between updates)
-                   :ttl        (rss-query-value (xml-query channel "ttl") #'parse-integer)
-                   
-                   ;; rss channels don't support icons, so try a favicon
-                   :icon       (when link
-                                 (format-url (copy-url link :path "/favicon.ico")))
-                   
-                   ;; use the build date or publish date
-                   :date       (rss-query-date channel '("lastBuildDate" "pubDate") #'encode-universal-rfc822-time)
-                   
-                   ;; parse all the items in the channel
-                   :items      (mapcar #'rss-parse-item (xml-query channel "item" :all t)))))
+;;; ----------------------------------------------------
 
-(defun rss-parse-item (item)
-  "Parse an individual items in an RSS 2.0 channel."
-  (let ((link (rss-find-link item)))
-    (make-instance 'rss-item
-                   :title      (rss-query (xml-query item "title"))
-                   :author     (rss-query (xml-query item "author"))
-                   :summary    (rss-query (xml-query item "description"))
-                   
-                   ;; set the link to the external site
-                   :link       link
-                   
-                   ;; find multimedia content
-                   :content    (mapcar #'rss-parse-enclosure (xml-query item "enclosure" :all t))
-                   
-                   ;; category tags
-                   :categories (mapcar #'xml-node-value (xml-query item "category" :all t))
-                   
-                   ;; RSS 2.0 items only have a publish date
-                   :date       (rss-query-date item '("pubDate") #'encode-universal-rfc822-time)
-                   
-                   ;; for the unique identifier, use the link if no guid is present
-                   :guid       (or (rss-query (xml-query item "guid")) link))))
+(defun rss-parse-channel-link (node &optional (path "link"))
+  "Parse the URL for a link."
+  (rss-query-value node path #'url-parse))
 
-(defun rss-find-link (node)
-  "Scan all the link tags until it finds a valid URL."
-  (loop for tag in (xml-query node "link" :all t)
+;;; ----------------------------------------------------
 
-        ;; attempt to parse the link found
-        do (when (handler-case
-                     (parse-url (xml-node-value tag))
-                   (condition (c) nil))
-             (return-from rss-find-link (xml-node-value tag)))))
+(defun rss-parse-channel-date (node)
+  "Parse a date/time in RSS format."
+  (rss-query-date node '("lastBuildDate" "pubDate") :rss))
+
+;;; ----------------------------------------------------
 
 (defun rss-parse-enclosure (node)
   "Parse the attributes of an RSS item enclosure."
   (make-instance 'rss-content
-                 :link (rss-query (xml-query-attribute node "url"))
-                 :type (rss-query (xml-query-attribute node "type"))))
+
+                 ;; get the link to the content
+                 :link (let ((url (xml-query-attribute node "url")))
+                         (when url
+                           (url-parse url)))
+
+                 ;; parse the mime type of the content
+                 :type (let ((type (xml-query-attribute node "type")))
+                         (when type
+                           (content-type-parse type)))))
+
+;;; ----------------------------------------------------
+
+(defun rss-parse-channel-item (node)
+  "Parse an individual items in an RSS 2.0 channel."
+  (let ((link (rss-parse-channel-link node)))
+    (make-instance
+     'rss-item
+
+     ;; title, author, and description
+     :title      (rss-query node "title")
+     :author     (rss-query node "author")
+     :summary    (rss-query node "description")
+
+     ;; set the link to the external site
+     :link       link
+
+     ;; find multimedia content
+     :content    (let ((content (xml-query node "enclosure")))
+                   (mapcar #'rss-parse-enclosure content))
+
+     ;; category tags
+     :categories (let ((cats (xml-query node "category")))
+                   (mapcar #'xml-node-value cats))
+
+     ;; RSS 2.0 items only have a publish date
+     :date       (rss-parse-channel-date node)
+
+     ;; use the link if no guid is present
+     :guid       (or (rss-query node "guid") link))))
+
+;;; ----------------------------------------------------
+
+(defun rss-parse-channel (node url)
+  "Parse the items of an RSS 2.0 channel."
+  (let ((link (or (rss-parse-channel-link node) url)))
+    (make-instance
+     'rss-feed
+
+     ;; title and description
+     :title      (rss-query node "title")
+     :subtitle   (rss-query node "description")
+
+     ;; get the url to the channel's image
+     :image      (rss-query-value node "image/url" #'url-parse)
+
+     ;; set the link to the homepage
+     :link       link
+
+     ;; time to live (number of minutes between updates)
+     :ttl        (rss-query-value node "ttl" #'parse-integer)
+
+     ;; rss channels don't support icons, so try a favicon
+     :icon       (url-copy link :path "/favicon.ico")
+
+     ;; use the build date or publish date
+     :date       (rss-parse-channel-date node)
+
+     ;; parse all the items in the channel
+     :items      (let ((items (xml-query node "item")))
+                   (mapcar #'rss-parse-channel-item items)))))
