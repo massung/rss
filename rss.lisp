@@ -55,6 +55,7 @@
    #:rss-aggregator-stop
    #:rss-aggregator-headlines
    #:rss-aggregator-wait
+   #:rss-aggregator-forget
    #:rss-aggregator-feeds
 
    ;; headline aggregation readers
