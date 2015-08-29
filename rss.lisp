@@ -51,7 +51,6 @@
    #:rss-content-link
 
    ;; rss-aggregator methods
-   #:rss-aggregator-start
    #:rss-aggregator-stop
    #:rss-aggregator-headlines
    #:rss-aggregator-wait
