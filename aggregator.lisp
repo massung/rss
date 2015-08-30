@@ -103,7 +103,7 @@
 
         ;; start the reader process
         (setf (rss-reader-process r)
-              (process-run-function (url-format url) #'aggregate))))))
+              (process-run-function (princ-to-string url) #'aggregate))))))
 
 ;;; ----------------------------------------------------
 
