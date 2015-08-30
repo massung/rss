@@ -195,18 +195,31 @@
 ;;; ----------------------------------------------------
 
 (defmethod rss-aggregator-feeds ((agg rss-aggregator))
-  "Return the list of URLs being aggregated."
-  (with-slots (readers)
+  "Return the list of RSS feeds that have been parsed."
+  (with-slots (lock readers)
       agg
-    (mapcar #'rss-reader-url readers)))
+    (with-read-lock (lock)
+      (remove nil (mapcar #'rss-reader-feed readers)))))
 
 ;;; ----------------------------------------------------
 
-(defmethod (setf rss-aggregator-feeds) (urls (agg rss-aggregator))
+(defmethod rss-aggregator-feed-urls ((agg rss-aggregator))
+  "Return the list of URLs being aggregated."
+  (with-slots (lock readers)
+      agg
+    (with-read-lock (lock)
+      (mapcar #'rss-reader-url readers))))
+
+;;; ----------------------------------------------------
+
+(defmethod (setf rss-aggregator-feed-urls) (urls (agg rss-aggregator))
   "Stop feeds that aren't in the new URL list."
   (with-slots (lock (hs headlines) readers)
       agg
-    (let ((urls (mapcar #'url-copy urls)))
+    (let* ((parsed-urls (mapcar #'url-parse urls))
+
+           ;; make sure there are no duplicate URLs
+           (urls (remove-duplicates parsed-urls :test #'url-equal)))
 
       ;; kill feed readers and forget headlines
       (with-write-lock (lock)
@@ -224,22 +237,25 @@
                 (process-kill p)
 
                 ;; forget any headlines from this feed
-                (setf hs (remove f hs :key #'rss-headline-feed)))))
+                (setf hs (remove f hs :key #'rss-headline-feed))))
 
-      ;; create new readers and keep existing ones
-      (setf readers
-            (loop
+        ;; create new readers and keep existing ones
+        (setf readers
+              (loop
 
-               ;; loop over all the urls
-               while urls for url = (url-copy (pop urls))
+                 ;; loop over all the urls
+                 while urls for url = (url-parse (pop urls))
 
-               ;; is this url already being aggregated?
-               for reader = (find url
-                                  readers
-                                  :test #'url-equal
-                                  :key #'rss-reader-url)
+                 ;; is this url already being aggregated?
+                 for reader = (find url
+                                    readers
+                                    :test #'url-equal
+                                    :key #'rss-reader-url)
 
-               ;; collect the existing reader or create a new one
-               collect (if reader
-                           reader
-                         (rss-aggregator-start agg url)))))))
+                 ;; collect the existing reader or create a new one
+                 collect (if reader
+                             reader
+                           (rss-aggregator-start agg url))))))
+
+    ;; finally, return the new list of urls
+    (rss-aggregator-feed-urls agg)))

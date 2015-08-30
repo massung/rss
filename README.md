@@ -56,13 +56,13 @@ The `rss` package also comes with a feed aggregator that will spawn a process pe
 
 First, create an aggregator:
 
-    CL-USER > (setf agg (make-instance 'rss-aggregator)
+    CL-USER > (setf agg (make-instance 'rss-aggregator))
     #<RSS-AGGREGATOR 200CBE2F>
 
 Next, add a feed to it...
 
-    CL-USER > (push "digg.com/rss/top.rss" (rss-aggregator-feeds agg))
-    (#<URL http://digg.com/rss/top.rss>)
+    CL-USER > (push "digg.com/rss/top.rss" (rss-aggregator-feed-urls agg))
+    (http://digg.com/rss/top.rss)
 
 At this point, the aggregator is processing the feed, and there are likely already headlines ready to be inspected. Let's wait, though, just in case.
 
@@ -102,18 +102,24 @@ The `before` argument defaults to the current, universal time, and is the time w
 
 *Note: forgetting a headline doesn't mean it may not reappear! If a feed still has the headline, it'll just reappear later.*
 
-Finally, to get a list of all the feed URLs being aggregated, simply call `rss-aggregator-feeds`.
+To get a list of all the feed URLs being aggregated, simply call `rss-aggregator-feed-urls`.
 
-    CL-USER > (rss-aggregator-feeds agg)
-    ("http://www.joystiq.com/rss.xml"
-     "http://digg.com/rss/top.rss")
+    CL-USER > (rss-aggregator-feed-urls agg)
+    (http://digg.com/rss/top.rss)
 
 This method is also `setf`-able (which is how we **push**ed our initial feed url onto the aggregator), and will handle terminating any readers that are not in the list and start aggregating feeds that are new.
 
-    CL-USER > (setf (rss-aggregator-feeds agg) (list "www.npr.org/rss/rss.php?id=1004"))
+    CL-USER > (setf (rss-aggregator-feed-urls agg) (list "www.npr.org/rss/rss.php?id=1004"))
     NIL
 
-    CL-USER > (rss-aggregator-feeds agg)
-    ("http://www.npr.org/rss/rss.php?id=1004")
+    CL-USER > (rss-aggregator-feed-urls agg)
+    (http://www.npr.org/rss/rss.php?id=1004)
 
 *Note: changing the reader list will forget the headlines of any feeds you no longer wish to aggregate.*
+
+Finally, if you'd like a list of all the RSS feeds that have been aggregated, use the `rss-aggregator-feeds` method.
+
+    CL-USER > (rss-aggregator-feeds agg)
+    (#<RSS-FEED "World : NPR" (15 items)>)
+
+That's it!

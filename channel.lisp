@@ -99,7 +99,7 @@
      :ttl        (rss-query-value node "ttl" #'parse-integer)
 
      ;; rss channels don't support icons, so try a favicon
-     :icon       (url-copy link :path "/favicon.ico")
+     :icon       (url-parse link :path "/favicon.ico")
 
      ;; use the build date or publish date
      :date       (rss-parse-channel-date node)
