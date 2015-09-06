@@ -116,9 +116,9 @@
 
 ;;; ----------------------------------------------------
 
-(defun rss-get (url &key (redirect-limit 3))
+(defun rss-get (url)
   "Fetch a feed from a URL and parse it."
-  (with-response (resp (http-get url :redirect-limit redirect-limit))
+  (with-response (resp (http-get url))
     (let ((doc (xml-parse (resp-body resp) url)))
       (rss-parse doc url))))
 
@@ -136,8 +136,8 @@
 (defun rss-content-find (item type &optional subtype)
   "Returns a list of rss-content objects matching a particular type."
   (flet ((match-content-p (c)
-           (destructuring-bind (fst &optional snd)
-               (content-mime-type c)
+           (let ((fst (content-type-mime-type c))
+                 (snd (content-type-mime-subtype c)))
              (and (string-equal fst type)
                   (or (null subtype)
                       (string-equal snd subtype))))))
