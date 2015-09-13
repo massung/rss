@@ -49,6 +49,12 @@
 
 ;;; ----------------------------------------------------
 
+(defmethod initialize-instance :after ((agg rss-aggregator) &key feed-urls)
+  "Initialize the aggregator with an initial set of feeds."
+  (setf (rss-aggregator-feed-urls agg) feed-urls))
+
+;;; ----------------------------------------------------
+
 (defmethod print-object ((reader rss-reader) stream)
   "Print a reader to a stream."
   (print-unreadable-object (reader stream :type t)
