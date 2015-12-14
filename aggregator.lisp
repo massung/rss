@@ -146,7 +146,7 @@
                   (push h headlines)))))
 
         ;; finally, update the time the last aggregate happened
-        (setf stamp (get-universal-time))))))
+        (setf stamp (get-internal-real-time))))))
 
 ;;; ----------------------------------------------------
 
