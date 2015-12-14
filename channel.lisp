@@ -38,12 +38,12 @@
   (make-instance 'rss-content
 
                  ;; get the link to the content
-                 :link (let ((url (xml-query-attribute node "url")))
+                 :link (let ((url (xml-tag-get node "url")))
                          (when url
                            (url-parse url)))
 
                  ;; parse the mime type of the content
-                 :type (let ((type (xml-query-attribute node "type")))
+                 :type (let ((type (xml-tag-get node "type")))
                          (when type
                            (content-type-parse type)))))
 

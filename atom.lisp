@@ -23,10 +23,10 @@
 
 (defun rss-parse-atom-link (node &optional (path "link"))
   "Parse the URL for a link."
-  (flet ((parse-href (node)
-           (let ((href (xml-query-attribute node "href")))
+  (flet ((parse-href (link)
+           (let ((href (xml-tag-get link "href")))
              (when href
-               (url-parse (xml-node-value href))))))
+               (url-parse href)))))
     (rss-query node path #'parse-href)))
 
 ;;; ----------------------------------------------------
@@ -49,12 +49,12 @@
                  :summary (xml-node-value node)
 
                  ;; lookup a link to the content
-                 :link (let ((src (xml-query-attribute node "src")))
+                 :link (let ((src (xml-tag-get node "src")))
                          (when src
-                           (url-parse (xml-node-value src))))
+                           (url-parse src)))
 
                  ;; parse the mime type
-                 :type (let ((type (xml-query-attribute node "type")))
+                 :type (let ((type (xml-tag-get node "type")))
                          (when type
                            (content-type-parse type)))))
 
