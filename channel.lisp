@@ -35,15 +35,16 @@
 
 (defun rss-parse-enclosure (node)
   "Parse the attributes of an RSS item enclosure."
-  (make-instance 'rss-content
+  (make-instance
+   'rss-content
 
-                 ;; get the link to the content
-                 :link (first (xml-query node "@url/%text/'url:url-parse"))
+   ;; get the link to the content
+   :link (first (xml-query node "@url/%text/'url:url-parse"))
 
-                 ;; parse the mime type of the content
-                 :type (let ((type (xml-tag-get node "type")))
-                         (when type
-                           (content-type-parse type)))))
+   ;; parse the mime type of the content
+   :type (let ((type (xml-tag-get node "type")))
+           (when type
+             (content-type-parse type)))))
 
 ;;; ----------------------------------------------------
 
@@ -73,7 +74,7 @@
      :date       (rss-parse-channel-date node)
 
      ;; use the link if no guid is present
-     :guid       (or (rss-query node "guid") link))))
+     :guid       (or (rss-query node "guid/%text") link))))
 
 ;;; ----------------------------------------------------
 
