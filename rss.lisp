@@ -145,19 +145,11 @@
 
 ;;; ----------------------------------------------------
 
-(defun rss-query (node path &optional (if-found #'xml-node-value))
+(defun rss-query (node path &optional (if-found #'identity))
   "Search for a child tag of an node."
-  (let ((q (xml-query node path)))
+  (let ((q (first (xml-query node path))))
     (when q
-      (funcall if-found (first q)))))
-
-;;; ----------------------------------------------------
-
-(defun rss-query-value (node path &optional (if-found #'identity))
-  "Apply a function to a node value if the node exists."
-  (let ((value (rss-query node path)))
-    (when value
-      (funcall if-found value))))
+      (funcall if-found q))))
 
 ;;; ----------------------------------------------------
 
@@ -165,8 +157,7 @@
   "Attempts to get the date of an RSS feed/item."
   (do ((loc (pop locations)
             (pop locations)))
-      ((null loc)
-       (get-universal-time))
-    (let ((date (rss-query node loc)))
+      ((null loc) (get-universal-time))
+    (let ((date (rss-query node loc 'xml-node-value)))
       (when date
         (return (encode-universal-rfc-time date date-format))))))

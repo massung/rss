@@ -21,13 +21,9 @@
 
 ;;; ----------------------------------------------------
 
-(defun rss-parse-atom-link (node &optional (path "link"))
+(defun rss-parse-atom-link (node)
   "Parse the URL for a link."
-  (flet ((parse-href (node)
-           (let ((href (xml-query-attribute node "href")))
-             (when href
-               (url-parse (xml-node-value href))))))
-    (rss-query node path #'parse-href)))
+  (first (xml-query node "link/@href/%text/'url:url-parse")))
 
 ;;; ----------------------------------------------------
 
@@ -39,74 +35,71 @@
 
 (defun rss-parse-atom-items (node)
   "Parse all the items in an atom feed."
-  (mapcar #'rss-parse-atom-entry (xml-query node "entry")))
+  (xml-query node "entry/'rss::rss-parse-atom-entry"))
 
 ;;; ----------------------------------------------------
 
 (defun rss-parse-atom-content (node)
   "Parse the attributes of a content tag."
-  (make-instance 'rss-content
-                 :summary (xml-node-value node)
+  (make-instance
+   'rss-content
+   :summary (xml-node-value node)
 
-                 ;; lookup a link to the content
-                 :link (let ((src (xml-query-attribute node "src")))
-                         (when src
-                           (url-parse (xml-node-value src))))
+   ;; lookup a link to the content
+   :link (rss-query node "@src/%text/'url:url-parse")
 
-                 ;; parse the mime type
-                 :type (let ((type (xml-query-attribute node "type")))
-                         (when type
-                           (content-type-parse type)))))
+   ;; parse the mime type
+   :type (rss-query node "type/%text/'http:content-type-parse")))
 
 ;;; ----------------------------------------------------
 
 (defun rss-parse-atom-entry (node)
   "Parse a single atom item."
   (let ((link (rss-parse-atom-link node)))
-    (make-instance 'rss-item
-                   :title      (rss-query node "title")
-                   :author     (rss-query node "author/name")
-                   :summary    (rss-query node "summary")
+    (make-instance
+     'rss-item
+     :title      (rss-query node "title/%text")
+     :author     (rss-query node "author/name/%text")
+     :summary    (rss-query node "summary/%text")
 
-                   ;; get the link to this item
-                   :link       link
+     ;; get the link to this item
+     :link       link
 
-                   ;; look for multimedia content
-                   :content    (let ((content (xml-query node "content")))
-                                 (mapcar #'rss-parse-atom-content content))
+     ;; look for multimedia content
+     :content    (xml-query node "content/'rss::rss-parse-atom-content")
 
-                   ;; category tags
-                   :categories (let ((cats (xml-query node "category")))
-                                 (mapcar #'xml-node-value cats))
+     ;; category tags
+     :categories (xml-query node "category/%text")
 
-                   ;; use the unique id if present, otherwise the link
-                   :guid       (or (rss-query node "id") link)
+     ;; use the unique id if present, otherwise the link
+     :guid       (or (rss-query node "id/%text") link)
 
-                   ;; get the date the item was last updated
-                   :date       (rss-parse-atom-date node))))
+     ;; get the date the item was last updated
+     :date       (rss-parse-atom-date node))))
 
 
 ;;; ----------------------------------------------------
 
 (defun rss-parse-atom (node url)
   "Parse the items of an ATOM feed."
-  (make-instance 'rss-feed
-                 :title      (rss-query node "title")
-                 :subtitle   (rss-query node "subtitle")
+  (make-instance
+   'rss-feed
+   :title      (rss-query node "title/%text")
+   :subtitle   (rss-query node "subtitle/%text")
 
-                 ;; set the link back to the site
-                 :link       (let ((link (rss-parse-atom-link node)))
-                               (or link url))
+   ;; set the link back to the site
+   :link       (let ((link (rss-parse-atom-link node)))
+                 (or link url))
 
-                 ;; time to live (minutes between updates)
-                 :ttl        (rss-query-value node "ttl" #'parse-integer)
+   ;; time to live (minutes between updates)
+   :ttl        (rss-query node "ttl/%text/'parse-integer")
 
-                 ;; can have a logo and icon
-                 :image      (rss-query node "logo")
-                 :icon       (rss-query node "icon")
+   ;; can have a logo and icon
+   :image      (rss-query node "logo/%text")
+   :icon       (rss-query node "icon/%text")
 
-                 ;; use the build date or publish date
-                 :date       (rss-parse-atom-date node)
+   ;; use the build date or publish date
+   :date       (rss-parse-atom-date node)
 
-                 ;; parse all the entries in the feed
-                 :items      (rss-parse-atom-items node)))
+   ;; parse all the entries in the feed
+   :items      (rss-parse-atom-items node)))

@@ -21,9 +21,9 @@
 
 ;;; ----------------------------------------------------
 
-(defun rss-parse-channel-link (node &optional (path "link"))
+(defun rss-parse-channel-link (node)
   "Parse the URL for a link."
-  (rss-query-value node path #'url-parse))
+  (rss-query node "link/%text/'url:url-parse"))
 
 ;;; ----------------------------------------------------
 
@@ -38,12 +38,10 @@
   (make-instance 'rss-content
 
                  ;; get the link to the content
-                 :link (let ((url (xml-query-attribute node "url")))
-                         (when url
-                           (url-parse url)))
+                 :link (first (xml-query node "@url/%text/'url:url-parse"))
 
                  ;; parse the mime type of the content
-                 :type (let ((type (xml-query-attribute node "type")))
+                 :type (let ((type (xml-tag-get node "type")))
                          (when type
                            (content-type-parse type)))))
 
@@ -56,9 +54,9 @@
      'rss-item
 
      ;; title, author, and description
-     :title      (rss-query node "title")
-     :author     (rss-query node "author")
-     :summary    (rss-query node "description")
+     :title      (rss-query node "title/%text")
+     :author     (rss-query node "author/%text")
+     :summary    (rss-query node "description/%text")
 
      ;; set the link to the external site
      :link       link
@@ -86,17 +84,17 @@
      'rss-feed
 
      ;; title and description
-     :title      (rss-query node "title")
-     :subtitle   (rss-query node "description")
+     :title      (rss-query node "title/%text")
+     :subtitle   (rss-query node "description/%text")
 
      ;; get the url to the channel's image
-     :image      (rss-query-value node "image/url" #'url-parse)
+     :image      (rss-query node "image/url/'url:url-parse")
 
      ;; set the link to the homepage
      :link       link
 
      ;; time to live (number of minutes between updates)
-     :ttl        (rss-query-value node "ttl" #'parse-integer)
+     :ttl        (rss-query node "ttl/%text" #'parse-integer)
 
      ;; rss channels don't support icons, so try a favicon
      :icon       (url-parse link :path "/favicon.ico")

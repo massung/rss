@@ -44,7 +44,8 @@
 
 (defclass rss-headline ()
   ((feed :initarg :feed :accessor rss-headline-feed)
-   (item :initarg :item :accessor rss-headline-item))
+   (item :initarg :item :accessor rss-headline-item)
+   (mark :initarg :mark :accessor rss-headline-mark))
   (:documentation "A single, aggregated headline."))
 
 ;;; ----------------------------------------------------
@@ -141,6 +142,7 @@
 
                 ;; add the item to the headlines, count
                 (let ((h (make-instance 'rss-headline
+                                        :mark nil
                                         :feed feed
                                         :item item)))
                   (push h headlines)))))
