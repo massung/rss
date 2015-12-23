@@ -89,7 +89,7 @@
      :subtitle   (rss-query node "description/%text")
 
      ;; get the url to the channel's image
-     :image      (rss-query node "image/url/'url:url-parse")
+     :image      (rss-query node "image/url/%text/'url:url-parse")
 
      ;; set the link to the homepage
      :link       link

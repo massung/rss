@@ -147,9 +147,11 @@
 
 (defun rss-query (node path &optional (if-found #'identity))
   "Search for a child tag of an node."
-  (let ((q (first (xml-query node path))))
-    (when q
-      (funcall if-found q))))
+  (handler-case
+      (let ((q (first (xml-query node path))))
+        (when q
+          (funcall if-found q)))
+    (condition () nil)))
 
 ;;; ----------------------------------------------------
 
