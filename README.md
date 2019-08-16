@@ -1,6 +1,6 @@
-# RSS Parser and Aggregator for Clozure CL
+# RSS Parser and Aggregator for SBCL
 
-A simple RSS package for [Clozure CL](http://ccl.clozure.com). It depends on the following packages:
+A simple RSS package for [SBCL](http://sbcl.org). It depends on the following packages:
 
 * [URL](http://github.com/massung/url)
 * [XML](http://github.com/massung/xml)
