@@ -1,4 +1,4 @@
-;;;; RSS Parser and Aggregator for ClozureCL
+;;;; RSS Parser and Aggregator for SBCL
 ;;;;
 ;;;; Copyright (c) Jeffrey Massung
 ;;;;
@@ -18,7 +18,7 @@
 ;;;;
 
 (defpackage :rss
-  (:use :cl :ccl :rfc-date :xml :url :http)
+  (:use :cl :sb-ext :sb-thread :rfc-date :xml :url :http)
   (:export
    #:rss-get
    #:rss-parse

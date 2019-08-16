@@ -1,4 +1,4 @@
-;;;; RSS Parser and Aggregator for ClozureCL
+;;;; RSS Parser and Aggregator for SBCL
 ;;;;
 ;;;; Copyright (c) Jeffrey Massung
 ;;;;
@@ -22,7 +22,7 @@
 ;;; ----------------------------------------------------
 
 (defclass rss-aggregator ()
-  ((lock      :initform (make-read-write-lock))
+  ((lock      :initform (make-mutex))
 
    ;; no time of last aggregation
    (stamp     :initform 0)
@@ -35,10 +35,10 @@
 ;;; ----------------------------------------------------
 
 (defclass rss-reader ()
-  ((process :initarg :process :accessor rss-reader-process)
-   (url     :initarg :url     :accessor rss-reader-url)
-   (feed    :initarg :feed    :accessor rss-reader-feed))
-  (:documentation "A process that is continuously polling an rss feed."))
+  ((thread :initarg :thread :accessor rss-reader-thread)
+   (url    :initarg :url    :accessor rss-reader-url)
+   (feed   :initarg :feed   :accessor rss-reader-feed))
+  (:documentation "A thread that is continuously polling an rss feed."))
 
 ;;; ----------------------------------------------------
 
@@ -59,7 +59,7 @@
 (defmethod print-object ((reader rss-reader) stream)
   "Print a reader to a stream."
   (print-unreadable-object (reader stream :type t)
-    (prin1 (process-name (rss-reader-process reader)) stream)))
+    (prin1 (thread-name (rss-reader-thread reader)) stream)))
 
 ;;; ----------------------------------------------------
 
@@ -72,19 +72,20 @@
 ;;; ----------------------------------------------------
 
 (defmethod rss-aggregator-stop ((agg rss-aggregator))
-  "Stop all reader processes and the aggregation process."
+  "Stop all reader threads and the aggregation thread."
   (with-slots (readers)
       agg
-    (loop for r in readers do (process-kill (rss-reader-process r)))))
+    (dolist (r readers)
+      (terminate-thread (rss-reader-thread r)))))
 
 ;;; ----------------------------------------------------
 
 (defmethod rss-aggregator-start ((agg rss-aggregator) url)
-  "Start a new feed reader process."
+  "Start a new feed reader thread."
   (let ((r (make-instance 'rss-reader :url url :feed nil)))
     (prog1 r
 
-      ;; create the process that will aggregate the headlines
+      ;; create the thread that will aggregate the headlines
       (flet ((aggregate ()
                (do ((feed (rss-get (rss-reader-url r))
                           (rss-get (rss-reader-url r))))
@@ -96,21 +97,21 @@
                  ;; aggregate all the headlines in the feed
                  (rss-aggregator-aggregate agg feed)
 
-                 ;; update the name of the process to the feed's title
+                 ;; update the name of the thread to the feed's title
                  (let ((title (rss-feed-title feed)))
                    (when title
-                     (setf (process-name *current-process*) title)))
+                     (setf (thread-name *current-thread*) title)))
 
                  ;; get the time-to-live (default to 5 minutes)
                  (let* ((ttl (or (rss-feed-ttl feed) 5))
                         (time (+ (get-universal-time) (* ttl 60))))
                    (flet ((expired-p ()
                             (>= (get-universal-time) time)))
-                     (process-wait "TTL" #'expired-p))))))
+                     (wait-for #'expired-p))))))
 
-        ;; start the reader process
-        (setf (rss-reader-process r)
-              (process-run-function (princ-to-string url) #'aggregate))))))
+        ;; start the reader thread
+        (setf (rss-reader-thread r)
+              (make-thread #'aggregate :name (princ-to-string url)))))))
 
 ;;; ----------------------------------------------------
 
@@ -124,7 +125,7 @@
              (rss-item-date (rss-headline-item h))))
 
       ;; add new headlines to the aggregator
-      (with-write-lock (lock)
+      (with-mutex (lock)
         (dolist (item (rss-feed-items feed))
           (let* ((guid (rss-item-guid item))
 
@@ -156,7 +157,7 @@
   "Return all the headlines sorted since a given timestamp."
   (with-slots (headlines lock)
       agg
-    (with-read-lock (lock)
+    (with-mutex (lock)
       (loop
          for h in headlines
 
@@ -180,7 +181,7 @@
       agg
     (flet ((old-p (h)
              (< (rss-item-date (rss-headline-item h)) before)))
-      (with-write-lock (lock)
+      (with-mutex (lock)
         (setf headlines
               (if (null before)
                   nil
@@ -192,13 +193,12 @@
   "Waits for new headlines to be available before continuing."
   (with-slots (stamp lock)
       agg
-    (let ((ticks (and timeout (* timeout *ticks-per-second*))))
-      (flet ((updated-p ()
-               (or (null since)
-                   (with-read-lock (lock)
-                     (> stamp since)))))
-        (when (process-wait-with-timeout "RSS Wait" ticks #'updated-p)
-          (values t stamp))))))
+    (flet ((updated-p ()
+             (or (null since)
+                 (with-mutex (lock)
+                   (> stamp since)))))
+      (when (wait-for (updated-p) :timeout timeout)
+        (values t stamp)))))
 
 ;;; ----------------------------------------------------
 
@@ -206,7 +206,7 @@
   "Return the list of RSS feeds that have been parsed."
   (with-slots (lock readers)
       agg
-    (with-read-lock (lock)
+    (with-mutex (lock)
       (remove nil (mapcar #'rss-reader-feed readers)))))
 
 ;;; ----------------------------------------------------
@@ -215,7 +215,7 @@
   "Return the list of URLs being aggregated."
   (with-slots (lock readers)
       agg
-    (with-read-lock (lock)
+    (with-mutex (lock)
       (mapcar #'rss-reader-url readers))))
 
 ;;; ----------------------------------------------------
@@ -230,7 +230,7 @@
            (urls (remove-duplicates parsed-urls :test #'url-equal)))
 
       ;; kill feed readers and forget headlines
-      (with-write-lock (lock)
+      (with-mutex (lock)
         (loop
 
            ;; loop over all the current readers
@@ -239,10 +239,11 @@
            ;; is the reader url in the list of urls to keep?
            unless (find (rss-reader-url r) urls :test #'url-equal)
 
-           ;; kill the process for the reader
+           ;; kill the thread for the reader
            do (let ((f (rss-reader-feed r))
-                    (p (rss-reader-process r)))
-                (process-kill p)
+                    (p (rss-reader-thread r)))
+                (when (thread-alive-p p)
+                  (terminate-thread p))
 
                 ;; forget any headlines from this feed
                 (setf hs (remove f hs :key #'rss-headline-feed))))

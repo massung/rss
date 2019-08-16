@@ -1,4 +1,4 @@
-;;;; RSS Parser and Aggregator for ClozureCL
+;;;; RSS Parser and Aggregator for SBCL
 ;;;;
 ;;;; Copyright (c) Jeffrey Massung
 ;;;;
